@@ -738,7 +738,7 @@ class ScadParser {
         }
 
         val finalSolid = if (allSolids.isEmpty()) {
-            CsgSolid.cube(Vector3(20f, 20f, 10f), center = true)
+            CsgSolid(emptyList())
         } else {
             var combined = allSolids[0]
             for (i in 1 until allSolids.size) combined = combined.union(allSolids[i])

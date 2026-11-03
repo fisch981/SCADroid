@@ -155,16 +155,24 @@ fun ViewportScreen(
 
                     when (renderState) {
                         is RenderState.Ready -> {
-                            Text(
-                                text = "Modell: ${mesh.triangleCount} Dreiecke | ${mesh.vertexCount} Vertices",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "Abmessungen: ${(mesh.maxBound.x - mesh.minBound.x).toInt()} × ${(mesh.maxBound.y - mesh.minBound.y).toInt()} × ${(mesh.maxBound.z - mesh.minBound.z).toInt()} mm",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFFB0B0B0)
-                            )
+                            if (mesh.triangleCount == 0) {
+                                Text(
+                                    text = "Modell: Keine Geometrie (Leer)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFFB0B0B0)
+                                )
+                            } else {
+                                Text(
+                                    text = "Modell: ${mesh.triangleCount} Dreiecke | ${mesh.vertexCount} Vertices",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Abmessungen: ${(mesh.maxBound.x - mesh.minBound.x).toInt()} × ${(mesh.maxBound.y - mesh.minBound.y).toInt()} × ${(mesh.maxBound.z - mesh.minBound.z).toInt()} mm",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFFB0B0B0)
+                                )
+                            }
                             Text(
                                 text = "Auswertung: ${renderState.evaluationTimeMs} ms",
                                 style = MaterialTheme.typography.bodySmall,

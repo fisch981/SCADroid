@@ -227,4 +227,14 @@ class CsgEngineTest {
         val coneMesh = TriangleMesh.fromSolid(coneResult.solid)
         assertTrue("Cone should produce valid triangles without crashing", coneMesh.triangleCount > 0)
     }
+
+    @Test
+    fun testEmptyOrNonGeometryCodeYieldsEmptyMesh() {
+        val parser = ScadParser()
+        val result = parser.parseAndEvaluate("\$fn = 32;\n")
+        val mesh = TriangleMesh.fromSolid(result.solid)
+
+        assertEquals(0, mesh.triangleCount)
+        assertEquals(0, mesh.vertexCount)
+    }
 }
