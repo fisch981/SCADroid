@@ -25,6 +25,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
 
     private val parser = ScadParser()
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    private val prefs = application.getSharedPreferences("scadroid_prefs", android.content.Context.MODE_PRIVATE)
     private val projectFile = File(application.filesDir, "current_project.scad")
 
     companion object {
@@ -48,7 +49,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     private val _code = MutableStateFlow(loadInitialCode())
     val code: StateFlow<String> = _code.asStateFlow()
 
-    private val _currentFileName = MutableStateFlow<String>("current_project.scad")
+    private val _currentFileName = MutableStateFlow<String>(prefs.getString("current_file_name", "modell.scad") ?: "modell.scad")
     val currentFileName: StateFlow<String> = _currentFileName.asStateFlow()
 
     private val _statusMessage = MutableStateFlow<String?>(null)
@@ -77,6 +78,10 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun loadInitialCode(): String {
+        val saved = prefs.getString("saved_code", null)
+        if (!saved.isNullOrBlank()) {
+            return saved
+        }
         return try {
             if (projectFile.exists() && projectFile.length() > 0) {
                 projectFile.readText()
@@ -111,6 +116,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun saveCodeInternal(codeToSave: String) {
+        prefs.edit().putString("saved_code", codeToSave).apply()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 projectFile.writeText(codeToSave)
@@ -122,7 +128,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
 
     fun saveCurrentProject() {
         saveCodeInternal(_code.value)
-        appendLog("Projekt erfolgreich gespeichert in '${projectFile.name}'.")
+        appendLog("Projekt erfolgreich gespeichert.")
         _statusMessage.value = "Projekt gespeichert"
     }
 
@@ -135,6 +141,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         """.trimIndent()
         _code.value = emptyTemplate
         _currentFileName.value = "neues_modell.scad"
+        prefs.edit().putString("current_file_name", "neues_modell.scad").apply()
         saveCodeInternal(emptyTemplate)
         appendLog("Neues Projekt erstellt.")
         _statusMessage.value = "Neues Projekt erstellt"
@@ -144,6 +151,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     fun resetToSample() {
         _code.value = DEFAULT_SAMPLE_CODE
         _currentFileName.value = "beispiel_modell.scad"
+        prefs.edit().putString("current_file_name", "beispiel_modell.scad").apply()
         saveCodeInternal(DEFAULT_SAMPLE_CODE)
         appendLog("Beispiel-Modell geladen.")
         _statusMessage.value = "Beispiel geladen"
@@ -155,10 +163,11 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val inputStream = contentResolver.openInputStream(uri)
                 val loadedCode = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
-                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "modell.scad"
+                val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "modell.scad"
                 withContext(Dispatchers.Main) {
                     _code.value = loadedCode
                     _currentFileName.value = fileName
+                    prefs.edit().putString("current_file_name", fileName).apply()
                     saveCodeInternal(loadedCode)
                     appendLog("Datei '$fileName' erfolgreich geladen (${loadedCode.length} Zeichen).")
                     _statusMessage.value = "'$fileName' geladen"
@@ -179,11 +188,13 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                 contentResolver.openOutputStream(uri)?.use { outputStream ->
                     outputStream.write(_code.value.toByteArray(Charsets.UTF_8))
                 }
-                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "modell.scad"
+                val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "modell.scad"
                 withContext(Dispatchers.Main) {
                     _currentFileName.value = fileName
-                    appendLog("Datei erfolgreich exportiert nach '$fileName'.")
-                    _statusMessage.value = "'$fileName' exportiert"
+                    prefs.edit().putString("current_file_name", fileName).apply()
+                    saveCodeInternal(_code.value)
+                    appendLog("Datei erfolgreich gespeichert nach '$fileName'.")
+                    _statusMessage.value = "'$fileName' gespeichert"
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

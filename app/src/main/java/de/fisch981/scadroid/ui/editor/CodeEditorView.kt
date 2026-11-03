@@ -15,13 +15,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -40,8 +45,18 @@ fun CodeEditorView(
     modifier: Modifier = Modifier
 ) {
     val editorState = remember { mutableStateOf<CodeEditor?>(null) }
+    var currentPrefix by remember { mutableStateOf("") }
+    var showAutoDropdown by remember { mutableStateOf(false) }
 
-    val shortcutTokens = listOf("✨ Auto", ";", "{", "}", "[", "]", "(", ")", "=", "\$fn = ", "cube()", "cylinder()", "sphere()", "difference()", "union()")
+    val defaultSymbols = listOf(";", "{", "}", "[", "]", "(", ")", "=", "\$fn = ", "cube()", "cylinder()", "sphere()", "difference()", "union()")
+
+    // Finde passende Vorschläge basierend auf aktuellem Teilwort unter dem Cursor
+    val matchingSnippets = if (currentPrefix.length >= 1) {
+        OPENSCAD_SNIPPETS.filter {
+            it.label.lowercase().startsWith(currentPrefix.lowercase()) ||
+            it.label.lowercase().contains(currentPrefix.lowercase())
+        }
+    } else emptyList()
 
     val chipColors = AssistChipDefaults.assistChipColors(
         containerColor = Color(0xFF282828),
@@ -55,7 +70,7 @@ fun CodeEditorView(
             .fillMaxSize()
             .background(DarkBackground)
     ) {
-        // Quick Symbol & Snippet Toolbar
+        // Quick Symbol & Dynamic Auto-Completion Toolbar
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
@@ -63,45 +78,134 @@ fun CodeEditorView(
                 .border(1.dp, DarkBorder)
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
-            items(shortcutTokens) { token ->
-                val isAuto = token == "✨ Auto"
+            // 1. Auto-Vervollständigungs-Button mit Dropdown
+            item {
+                Box {
+                    AssistChip(
+                        onClick = {
+                            showAutoDropdown = true
+                            editorState.value?.let { editor ->
+                                editor.getComponent(EditorAutoCompletion::class.java).requireCompletion()
+                            }
+                        },
+                        label = {
+                            Text(
+                                "✨ Befehle",
+                                style = labelStyle,
+                                color = Color(0xFFFFD54F),
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = Color(0xFF383318),
+                            labelColor = Color(0xFFFFD54F)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5A93C)),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+
+                    DropdownMenu(
+                        expanded = showAutoDropdown,
+                        onDismissRequest = { showAutoDropdown = false },
+                        modifier = Modifier.background(DarkSurface)
+                    ) {
+                        OPENSCAD_SNIPPETS.forEach { snip ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(snip.label, color = ScadGold, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                        Text(snip.desc, color = Color(0xFFB0B0B0), style = MaterialTheme.typography.labelSmall)
+                                    }
+                                },
+                                onClick = {
+                                    showAutoDropdown = false
+                                    editorState.value?.let { editor ->
+                                        editor.requestFocus()
+                                        if (currentPrefix.isNotEmpty()) {
+                                            val cursor = editor.cursor
+                                            editor.text.replace(cursor.leftLine, cursor.leftColumn - currentPrefix.length, cursor.leftLine, cursor.leftColumn, snip.commitText)
+                                        } else {
+                                            editor.commitText(snip.commitText)
+                                        }
+                                        onCodeChange(editor.text.toString())
+                                        currentPrefix = ""
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. Wenn der Nutzer gerade ein Wort tippt: Zeige die passenden Befehlsvorschläge an!
+            if (matchingSnippets.isNotEmpty()) {
+                items(matchingSnippets) { snip ->
+                    AssistChip(
+                        onClick = {
+                            editorState.value?.let { editor ->
+                                editor.requestFocus()
+                                val cursor = editor.cursor
+                                val pLen = currentPrefix.length
+                                editor.text.replace(
+                                    cursor.leftLine,
+                                    cursor.leftColumn - pLen,
+                                    cursor.leftLine,
+                                    cursor.leftColumn,
+                                    snip.commitText
+                                )
+                                onCodeChange(editor.text.toString())
+                                currentPrefix = ""
+                            }
+                        },
+                        label = {
+                            Text(
+                                "✨ ${snip.label}",
+                                style = labelStyle,
+                                color = Color(0xFFFFD54F),
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = Color(0xFF332D12),
+                            labelColor = Color(0xFFFFD54F)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB38600)),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+            }
+
+            // 3. Standard-Symbole und Klammern
+            items(defaultSymbols) { token ->
                 AssistChip(
                     onClick = {
                         val editor = editorState.value ?: return@AssistChip
                         editor.requestFocus()
-                        if (isAuto) {
-                            val autoComp = editor.getComponent(EditorAutoCompletion::class.java)
-                            autoComp.requireCompletion()
-                        } else {
-                            when (token) {
-                                "{}" -> editor.commitText("{\n    \n}")
-                                "()" -> editor.commitText("()")
-                                "[]" -> editor.commitText("[]")
-                                "cube()" -> editor.commitText("cube([10, 10, 10]);")
-                                "cylinder()" -> editor.commitText("cylinder(h = 10, r = 5);")
-                                "sphere()" -> editor.commitText("sphere(r = 10);")
-                                "difference()" -> editor.commitText("difference() {\n    \n}")
-                                "union()" -> editor.commitText("union() {\n    \n}")
-                                else -> editor.commitText(token)
-                            }
-                            onCodeChange(editor.text.toString())
+                        when (token) {
+                            "{}" -> editor.commitText("{\n    \n}")
+                            "()" -> editor.commitText("()")
+                            "[]" -> editor.commitText("[]")
+                            "cube()" -> editor.commitText("cube([10, 10, 10]);")
+                            "cylinder()" -> editor.commitText("cylinder(h = 10, r = 5);")
+                            "sphere()" -> editor.commitText("sphere(r = 10);")
+                            "difference()" -> editor.commitText("difference() {\n    \n}")
+                            "union()" -> editor.commitText("union() {\n    \n}")
+                            else -> editor.commitText(token)
                         }
+                        onCodeChange(editor.text.toString())
                     },
                     label = {
                         Text(
                             token,
                             style = labelStyle,
-                            color = if (isAuto) Color(0xFFFFD54F) else ScadGold,
-                            fontWeight = if (isAuto) FontWeight.Bold else FontWeight.Normal,
-                            fontFamily = if (isAuto) androidx.compose.ui.text.font.FontFamily.Default else androidx.compose.ui.text.font.FontFamily.Monospace
+                            color = ScadGold,
+                            fontFamily = FontFamily.Monospace
                         )
                     },
-                    colors = if (isAuto) {
-                        AssistChipDefaults.assistChipColors(
-                            containerColor = Color(0xFF383318),
-                            labelColor = Color(0xFFFFD54F)
-                        )
-                    } else chipColors,
+                    colors = chipColors,
                     border = chipBorder,
                     shape = RoundedCornerShape(6.dp),
                     modifier = Modifier.padding(end = 4.dp)
@@ -109,7 +213,7 @@ fun CodeEditorView(
             }
         }
 
-        // Native Sora Code Editor in Darcula Dark Theme mit OpenSCAD Autovervollständigung
+        // Native Sora Code Editor in Darcula Dark Theme mit OpenSCAD Syntax-Highlighting & Autovervollständigung
         AndroidView(
             factory = { context ->
                 CodeEditor(context).apply {
@@ -125,15 +229,17 @@ fun CodeEditorView(
                     isLineNumberEnabled = true
                     isWordwrap = false
 
-                    // Auto-Completion & Editing Props
+                    // Auto-Completion & Highlighting Props
                     props.autoCompletionOnComposing = true
                     props.symbolPairAutoCompletion = true
                     props.autoIndent = true
                     props.disallowSuggestions = false
                     props.highlightMatchingDelimiters = true
 
-                    // OpenSCAD Autovervollständigung aktivieren
-                    setEditorLanguage(OpenScadLanguage())
+                    // OpenSCAD Sprachunterstützung (Syntax-Highlighting & Vervollständigung)
+                    val lang = OpenScadLanguage()
+                    setEditorLanguage(lang)
+
                     val autoCompletion = getComponent(EditorAutoCompletion::class.java)
                     autoCompletion.isEnabled = true
                     autoCompletion.setCompletionWndPositionMode(EditorAutoCompletion.WINDOW_POS_MODE_AUTO)
@@ -142,9 +248,32 @@ fun CodeEditorView(
                     // Setze den Initialcode
                     setText(code)
 
-                    // Text-Change Listener
+                    // Text-Change & Cursor-Change Listener zur Erkennung des aktuellen Worts
+                    val updatePrefix = {
+                        val cursor = cursor
+                        val lineIdx = cursor.leftLine
+                        val colIdx = cursor.leftColumn
+                        val txt = text
+                        if (lineIdx < txt.lineCount) {
+                            val lineStr = txt.getLineString(lineIdx)
+                            val col = colIdx.coerceIn(0, lineStr.length)
+                            var start = col
+                            while (start > 0 && (lineStr[start - 1].isLetterOrDigit() || lineStr[start - 1] == '$' || lineStr[start - 1] == '_')) {
+                                start--
+                            }
+                            currentPrefix = lineStr.substring(start, col)
+                        } else {
+                            currentPrefix = ""
+                        }
+                    }
+
                     subscribeAlways(io.github.rosemoe.sora.event.ContentChangeEvent::class.java) {
                         onCodeChange(text.toString())
+                        updatePrefix()
+                    }
+
+                    subscribeAlways(io.github.rosemoe.sora.event.SelectionChangeEvent::class.java) {
+                        updatePrefix()
                     }
 
                     editorState.value = this

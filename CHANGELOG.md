@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.4] - 2026-11-03
+
+### GeÃ¤ndert / HinzugefÃ¼gt
+- Vollständiges OpenSCAD Syntax-Highlighting (Keywords, Funktionen, Zahlen, Strings, Variablen, Kommentare), dynamische Auto-Completion-Leiste direkt über der Tastatur, Befehle-Dropdown-Menü, Direktwechsel zur 3D-Ansicht bei Vorschau/Render, SAF-Speicherdialog und persistente Code-Speicherung ohne Header-Überlauf
+
 ## [0.1.3] - 2026-11-03
 
 ### GeÃ¤ndert / HinzugefÃ¼gt

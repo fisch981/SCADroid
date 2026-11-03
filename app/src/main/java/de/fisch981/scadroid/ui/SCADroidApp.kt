@@ -127,43 +127,40 @@ fun SCADroidApp(
             TopAppBar(
                 title = {
                     Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "SCADroid",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "• $currentFileName",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFFB0B0B0)
-                            )
-                        }
                         Text(
-                            text = engineVersion,
+                            text = "SCADroid",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (currentFileName != "modell.scad" && currentFileName != "current_project.scad") currentFileName else engineVersion,
                             style = MaterialTheme.typography.labelSmall,
-                            color = ScadGold
+                            color = ScadGold,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
                 },
                 actions = {
-                    // Quick Save Button
+                    // Speichern-Button: Fragt nach Dateiname & Speicherort
                     IconButton(
-                        onClick = { viewModel.saveCurrentProject() }
+                        onClick = { saveFileLauncher.launch(currentFileName) }
                     ) {
                         Icon(
                             Icons.Default.Save,
-                            contentDescription = "Speichern",
+                            contentDescription = "Speichern unter...",
                             tint = ScadGold,
                             modifier = Modifier.size(22.dp)
                         )
                     }
 
-                    // F5: Schnellvorschau
+                    // F5: Schnellvorschau (wechselt direkt zur 3D-Ansicht)
                     OutlinedButton(
-                        onClick = { viewModel.triggerPreview() },
+                        onClick = {
+                            viewModel.triggerPreview()
+                            selectedTab = 1
+                        },
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = Color(0xFF22252C),
                             contentColor = Color.White
@@ -182,9 +179,12 @@ fun SCADroidApp(
                         Text("Vorschau", color = Color.White, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
                     }
 
-                    // F6: CGAL Render
+                    // F6: CGAL Render (wechselt direkt zur 3D-Ansicht)
                     Button(
-                        onClick = { viewModel.triggerFullRender() },
+                        onClick = {
+                            viewModel.triggerFullRender()
+                            selectedTab = 1
+                        },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ScadGold,
                             contentColor = Color(0xFF121212)
