@@ -6,77 +6,81 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.CropFree
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.FitScreen
+import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlin.math.max
+import de.fisch981.scadroid.engine.ScadGlRenderer
+import de.fisch981.scadroid.engine.TriangleMesh
 import de.fisch981.scadroid.model.RenderState
-import javax.microedition.khronos.egl.EGLConfig
-import javax.microedition.khronos.opengles.GL10
+import de.fisch981.scadroid.ui.theme.DarkBorder
+import de.fisch981.scadroid.ui.theme.DarkSurface
+import de.fisch981.scadroid.ui.theme.ScadGold
 
 @Composable
 fun ViewportScreen(
     renderState: RenderState,
-    onResetCamera: () -> Unit = {},
+    mesh: TriangleMesh,
     modifier: Modifier = Modifier
 ) {
-    var rotationX by remember { mutableFloatStateOf(30f) }
-    var rotationY by remember { mutableFloatStateOf(45f) }
-    var zoomScale by remember { mutableFloatStateOf(1f) }
+    val renderer = remember { ScadGlRenderer() }
+
+    // Aktualisiere das gerenderte Mesh bei Änderungen
+    LaunchedEffect(mesh) {
+        renderer.currentMesh = mesh
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1E1E1E))
+            .background(Color(0xFF101216))
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, zoom, _ ->
-                    rotationY += pan.x * 0.5f
-                    rotationX = (rotationX + pan.y * 0.5f).coerceIn(-89f, 89f)
-                    zoomScale = (zoomScale * zoom).coerceIn(0.2f, 5.0f)
+                    // 1 Finger oder 2 Finger Geste:
+                    if (zoom != 1f) {
+                        renderer.distance = (renderer.distance / zoom).coerceIn(10f, 600f)
+                    } else {
+                        // Rotation & Pan
+                        renderer.yaw = (renderer.yaw + pan.x * 0.4f) % 360f
+                        renderer.pitch = (renderer.pitch + pan.y * 0.3f).coerceIn(-85f, 85f)
+                    }
                 }
             }
     ) {
-        // Native OpenGL ES SurfaceView
+        // Native OpenGL ES 3.0 Surface
         AndroidView(
             factory = { context ->
                 GLSurfaceView(context).apply {
                     setEGLContextClientVersion(3)
-                    setRenderer(object : GLSurfaceView.Renderer {
-                        override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-                            android.opengl.GLES30.glClearColor(0.12f, 0.12f, 0.14f, 1.0f)
-                            android.opengl.GLES30.glEnable(android.opengl.GLES30.GL_DEPTH_TEST)
-                        }
-
-                        override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-                            android.opengl.GLES30.glViewport(0, 0, width, height)
-                        }
-
-                        override fun onDrawFrame(gl: GL10?) {
-                            android.opengl.GLES30.glClear(
-                                android.opengl.GLES30.GL_COLOR_BUFFER_BIT or android.opengl.GLES30.GL_DEPTH_BUFFER_BIT
-                            )
-                        }
-                    })
+                    setRenderer(renderer)
                     renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
                 }
             },
@@ -90,33 +94,61 @@ fun ViewportScreen(
                 .padding(12.dp)
         ) {
             Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-                )
+                colors = CardDefaults.cardColors(containerColor = Color(0xDD181A20)),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2A2D35))
             ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    Text(
-                        text = "3D Ansicht (OpenGL ES 3.0)",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.ViewInAr,
+                            contentDescription = null,
+                            tint = ScadGold,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "3D VIEWPORT (OpenGL ES 3.0)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = ScadGold,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(Modifier.size(4.dp))
+
                     when (renderState) {
                         is RenderState.Ready -> {
                             Text(
-                                text = "Dreiecke: ${renderState.trianglesCount} | Punkte: ${renderState.verticesCount}",
-                                style = MaterialTheme.typography.bodySmall
+                                text = "Modell: ${mesh.triangleCount} Dreiecke | ${mesh.vertexCount} Vertices",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White
                             )
                             Text(
-                                text = "Render-Zeit: ${renderState.evaluationTimeMs} ms (${if (renderState.isFullRender) "CGAL F6" else "OpenCSG F5"})",
-                                style = MaterialTheme.typography.bodySmall
+                                text = "Abmessungen: ${(mesh.maxBound.x - mesh.minBound.x).toInt()} × ${(mesh.maxBound.y - mesh.minBound.y).toInt()} × ${(mesh.maxBound.z - mesh.minBound.z).toInt()} mm",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFB0B0B0)
+                            )
+                            Text(
+                                text = "Auswertung: ${renderState.evaluationTimeMs} ms (${if (renderState.isFullRender) "CGAL Render" else "Vorschau"})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF81C784)
                             )
                         }
                         is RenderState.Evaluating -> {
-                            Text(
-                                text = renderState.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = ScadGold
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = renderState.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = ScadGold
+                                )
+                            }
                         }
                         is RenderState.Error -> {
                             Text(
@@ -127,8 +159,9 @@ fun ViewportScreen(
                         }
                         RenderState.Idle -> {
                             Text(
-                                text = "Bereit für Vorschau (F5) oder Render (F6)",
-                                style = MaterialTheme.typography.bodySmall
+                                text = "Tippe oben auf Vorschau oder Render",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFAAAAAA)
                             )
                         }
                     }
@@ -136,21 +169,52 @@ fun ViewportScreen(
             }
         }
 
-        // Camera Action Buttons
-        Row(
+        // Kamera-Schnellwahltasten (Rechts Unten)
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(12.dp)
+                .padding(12.dp),
+            horizontalAlignment = Alignment.End
         ) {
-            FilledTonalIconButton(
+            // Isometric Standardansicht
+            SmallFloatingActionButton(
                 onClick = {
-                    rotationX = 30f
-                    rotationY = 45f
-                    zoomScale = 1f
-                    onResetCamera()
-                }
+                    renderer.yaw = 45f
+                    renderer.pitch = 30f
+                    renderer.distance = max(mesh.boundingRadius * 2.8f, 40f)
+                    renderer.panX = 0f
+                    renderer.panY = 0f
+                },
+                containerColor = Color(0xFF242730),
+                contentColor = Color.White,
+                modifier = Modifier.padding(bottom = 6.dp)
             ) {
-                Icon(Icons.Default.CropFree, contentDescription = "Kamera zentrieren")
+                Text("3D", style = MaterialTheme.typography.labelMedium)
+            }
+
+            // Draufsicht (Top)
+            SmallFloatingActionButton(
+                onClick = {
+                    renderer.yaw = 0f
+                    renderer.pitch = 89.9f
+                    renderer.distance = max(mesh.boundingRadius * 2.5f, 40f)
+                },
+                containerColor = Color(0xFF242730),
+                contentColor = Color.White,
+                modifier = Modifier.padding(bottom = 6.dp)
+            ) {
+                Text("Top", style = MaterialTheme.typography.labelMedium)
+            }
+
+            // Fit / Reset Center
+            SmallFloatingActionButton(
+                onClick = {
+                    renderer.resetCamera(mesh)
+                },
+                containerColor = ScadGold,
+                contentColor = Color(0xFF121212)
+            ) {
+                Icon(Icons.Default.FitScreen, contentDescription = "Modell zentrieren")
             }
         }
     }

@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.1] - 2026-11-03
+
+### Geändert / Hinzugefügt
+- Echtes 3D-CSG-Rendering mit OpenGL ES 3.0, Lines-App-Icon und vollwertiges CAD-Dark-Theme
+
 ## [0.1.0] - 2026-11-03
 
 ### Hinzugefügt
