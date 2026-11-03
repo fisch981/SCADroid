@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.8] - 2026-11-03
+
+### Geändert / Hinzugefügt
+- Prominente STL-Exportfunktion fuer 3D-Druck in Menue, 3D-Viewport-HUD und Floating Action Button
+
 ## [0.1.7] - 2026-11-03
 
 ### Geändert / Hinzugefügt

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -113,6 +114,12 @@ fun SCADroidApp(
         contract = ActivityResultContracts.CreateDocument("application/x-openscad")
     ) { uri ->
         uri?.let { viewModel.saveToUri(it, context.contentResolver) }
+    }
+
+    val exportStlLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("model/stl")
+    ) { uri ->
+        uri?.let { viewModel.exportStlToUri(it, context.contentResolver) }
     }
 
     val configuration = LocalConfiguration.current
@@ -236,11 +243,27 @@ fun SCADroidApp(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Exportieren / Speichern unter...", color = Color.White) },
+                                text = { Text("Code speichern unter...", color = Color.White) },
                                 leadingIcon = { Icon(Icons.Default.SaveAs, contentDescription = null, tint = ScadGold) },
                                 onClick = {
                                     menuExpanded = false
                                     saveFileLauncher.launch(currentFileName)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Als STL exportieren...", color = Color.White, fontWeight = FontWeight.Bold)
+                                        Text("3D-Druck Datei (.stl) speichern", color = Color(0xFF64B5F6), style = MaterialTheme.typography.labelSmall)
+                                    }
+                                },
+                                leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null, tint = ScadGold) },
+                                onClick = {
+                                    menuExpanded = false
+                                    val baseName = if (currentFileName.endsWith(".scad", ignoreCase = true)) {
+                                        currentFileName.substring(0, currentFileName.length - 5)
+                                    } else currentFileName
+                                    exportStlLauncher.launch("$baseName.stl")
                                 }
                             )
                             DropdownMenuItem(
@@ -331,7 +354,13 @@ fun SCADroidApp(
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         ViewportScreen(
                             renderState = renderState,
-                            mesh = currentMesh
+                            mesh = currentMesh,
+                            onExportStl = {
+                                val baseName = if (currentFileName.endsWith(".scad", ignoreCase = true)) {
+                                    currentFileName.substring(0, currentFileName.length - 5)
+                                } else currentFileName
+                                exportStlLauncher.launch("$baseName.stl")
+                            }
                         )
                     }
                 }
@@ -344,7 +373,13 @@ fun SCADroidApp(
                     )
                     1 -> ViewportScreen(
                         renderState = renderState,
-                        mesh = currentMesh
+                        mesh = currentMesh,
+                        onExportStl = {
+                            val baseName = if (currentFileName.endsWith(".scad", ignoreCase = true)) {
+                                currentFileName.substring(0, currentFileName.length - 5)
+                            } else currentFileName
+                            exportStlLauncher.launch("$baseName.stl")
+                        }
                     )
                     2 -> CustomizerView(
                         parameters = customizerParams,

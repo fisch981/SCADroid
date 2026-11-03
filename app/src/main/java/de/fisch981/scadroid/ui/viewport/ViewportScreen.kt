@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.CropFree
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.ViewInAr
@@ -50,6 +51,7 @@ import de.fisch981.scadroid.ui.theme.ScadGold
 fun ViewportScreen(
     renderState: RenderState,
     mesh: TriangleMesh,
+    onExportStl: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val renderer = remember { ScadGlRenderer() }
@@ -170,6 +172,30 @@ fun ViewportScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF81C784)
                             )
+                            Spacer(Modifier.size(4.dp))
+                            FilledTonalButton(
+                                onClick = onExportStl,
+                                colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = Color(0xFF1E3A5F),
+                                    contentColor = Color(0xFF64B5F6)
+                                ),
+                                shape = RoundedCornerShape(6.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.FileDownload,
+                                    contentDescription = "STL Export",
+                                    modifier = Modifier.size(15.dp),
+                                    tint = Color(0xFF64B5F6)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "STL exportieren (3D-Druck)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = Color(0xFF64B5F6)
+                                )
+                            }
                         }
                         is RenderState.Evaluating -> {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -212,6 +238,16 @@ fun ViewportScreen(
                 .padding(12.dp),
             horizontalAlignment = Alignment.End
         ) {
+            // STL-Export Schnellwahltaste (3D-Druck)
+            SmallFloatingActionButton(
+                onClick = onExportStl,
+                containerColor = Color(0xFF1976D2),
+                contentColor = Color.White,
+                modifier = Modifier.padding(bottom = 10.dp)
+            ) {
+                Icon(Icons.Default.FileDownload, contentDescription = "Als STL exportieren")
+            }
+
             // Isometric Standardansicht
             SmallFloatingActionButton(
                 onClick = {

@@ -205,6 +205,36 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun exportStlToUri(uri: Uri, contentResolver: ContentResolver) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val mesh = _currentMesh.value
+                if (mesh.triangleCount == 0) {
+                    withContext(Dispatchers.Main) {
+                        appendLog("STL-Export abgebrochen: Kein 3D-Modell berechnet.")
+                        _statusMessage.value = "Kein 3D-Modell zum Exportieren vorhanden"
+                    }
+                    return@launch
+                }
+
+                contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    mesh.exportBinaryStl(outputStream)
+                }
+
+                val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "modell.stl"
+                withContext(Dispatchers.Main) {
+                    appendLog("STL erfolgreich exportiert nach '$fileName' (${mesh.triangleCount} Dreiecke).")
+                    _statusMessage.value = "'$fileName' erfolgreich exportiert"
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    appendLog("Fehler beim STL-Export: ${e.message}")
+                    _statusMessage.value = "Fehler beim STL-Export"
+                }
+            }
+        }
+    }
+
     fun clearStatusMessage() {
         _statusMessage.value = null
     }

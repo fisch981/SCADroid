@@ -23,47 +23,52 @@ class TriangleMesh(
     /**
      * Schreibt das Mesh im binären STL-Format (Standard für 3D-Druck und Slicer).
      */
-    fun exportBinaryStl(file: File) {
-        FileOutputStream(file).use { out ->
-            val header = ByteArray(80)
-            "SCADroid Mobile OpenSCAD Exporter".toByteArray().copyInto(header)
-            out.write(header)
+    fun exportBinaryStl(out: java.io.OutputStream) {
+        val header = ByteArray(80)
+        "SCADroid Mobile OpenSCAD Exporter".toByteArray().copyInto(header)
+        out.write(header)
 
-            val countBuf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
-            countBuf.putInt(triangleCount)
-            out.write(countBuf.array())
+        val countBuf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
+        countBuf.putInt(triangleCount)
+        out.write(countBuf.array())
 
-            vertexBuffer.position(0)
-            normalBuffer.position(0)
+        val vBuf = vertexBuffer.duplicate()
+        val nBuf = normalBuffer.duplicate()
+        vBuf.position(0)
+        nBuf.position(0)
 
-            val triBuf = ByteBuffer.allocate(50).order(ByteOrder.LITTLE_ENDIAN)
-            for (i in 0 until triangleCount) {
-                triBuf.clear()
-                // Normal
-                val nx = normalBuffer.get()
-                val ny = normalBuffer.get()
-                val nz = normalBuffer.get()
-                // Skip the other 2 vertices normals if they were stored per vertex
-                normalBuffer.get(); normalBuffer.get(); normalBuffer.get()
-                normalBuffer.get(); normalBuffer.get(); normalBuffer.get()
-
-                triBuf.putFloat(nx)
-                triBuf.putFloat(ny)
-                triBuf.putFloat(nz)
-
-                // 3 Vertices
-                for (v in 0 until 3) {
-                    triBuf.putFloat(vertexBuffer.get())
-                    triBuf.putFloat(vertexBuffer.get())
-                    triBuf.putFloat(vertexBuffer.get())
-                }
-                // Attribute byte count
-                triBuf.putShort(0)
-                out.write(triBuf.array())
+        val triBuf = ByteBuffer.allocate(50).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until triangleCount) {
+            triBuf.clear()
+            // Normal
+            val nx = if (nBuf.hasRemaining()) nBuf.get() else 0f
+            val ny = if (nBuf.hasRemaining()) nBuf.get() else 0f
+            val nz = if (nBuf.hasRemaining()) nBuf.get() else 1f
+            // Überspringe die anderen 2 Vertex-Normalen falls pro Vertex gespeichert
+            if (nBuf.remaining() >= 6) {
+                nBuf.get(); nBuf.get(); nBuf.get()
+                nBuf.get(); nBuf.get(); nBuf.get()
             }
-            vertexBuffer.position(0)
-            normalBuffer.position(0)
+
+            triBuf.putFloat(nx)
+            triBuf.putFloat(ny)
+            triBuf.putFloat(nz)
+
+            // 3 Vertices
+            for (v in 0 until 3) {
+                triBuf.putFloat(if (vBuf.hasRemaining()) vBuf.get() else 0f)
+                triBuf.putFloat(if (vBuf.hasRemaining()) vBuf.get() else 0f)
+                triBuf.putFloat(if (vBuf.hasRemaining()) vBuf.get() else 0f)
+            }
+            // Attribute byte count
+            triBuf.putShort(0)
+            out.write(triBuf.array())
         }
+        out.flush()
+    }
+
+    fun exportBinaryStl(file: File) {
+        FileOutputStream(file).use { exportBinaryStl(it) }
     }
 
     companion object {
