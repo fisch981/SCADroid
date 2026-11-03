@@ -74,7 +74,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         loadEngineInfo()
-        evaluateInternal(isFull = false)
+        evaluateInternal()
     }
 
     private fun loadInitialCode(): String {
@@ -145,7 +145,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         saveCodeInternal(emptyTemplate)
         appendLog("Neues Projekt erstellt.")
         _statusMessage.value = "Neues Projekt erstellt"
-        evaluateInternal(isFull = false)
+        evaluateInternal()
     }
 
     fun resetToSample() {
@@ -155,7 +155,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         saveCodeInternal(DEFAULT_SAMPLE_CODE)
         appendLog("Beispiel-Modell geladen.")
         _statusMessage.value = "Beispiel geladen"
-        evaluateInternal(isFull = false)
+        evaluateInternal()
     }
 
     fun loadFromUri(uri: Uri, contentResolver: ContentResolver) {
@@ -171,7 +171,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                     saveCodeInternal(loadedCode)
                     appendLog("Datei '$fileName' erfolgreich geladen (${loadedCode.length} Zeichen).")
                     _statusMessage.value = "'$fileName' geladen"
-                    evaluateInternal(isFull = false)
+                    evaluateInternal()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -248,22 +248,17 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         _customizerParams.value = _customizerParams.value.map {
             if (it.name == param.name) param else it
         }
-        evaluateInternal(isFull = false)
+        evaluateInternal()
     }
 
-    fun triggerPreview() {
-        evaluateInternal(isFull = false)
+    fun render() {
+        evaluateInternal()
     }
 
-    fun triggerFullRender() {
-        evaluateInternal(isFull = true)
-    }
-
-    private fun evaluateInternal(isFull: Boolean) {
+    private fun evaluateInternal() {
         viewModelScope.launch {
-            val modeName = if (isFull) "CGAL Render (F6)" else "OpenCSG Vorschau (F5)"
-            _renderState.value = RenderState.Evaluating(0.2f, "Berechne $modeName...")
-            appendLog("Starte $modeName...")
+            _renderState.value = RenderState.Evaluating(0.2f, "Berechne 3D-Modell...")
+            appendLog("Starte 3D-Berechnung...")
 
             val startTime = System.currentTimeMillis()
 
@@ -285,10 +280,10 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                     verticesCount = mesh.vertexCount,
                     trianglesCount = mesh.triangleCount,
                     evaluationTimeMs = duration,
-                    isFullRender = isFull
+                    isFullRender = true
                 )
 
-                appendLog("Erfolgreich abgeschlossen: ${mesh.triangleCount} Dreiecke in ${duration} ms.")
+                appendLog("Erfolgreich berechnet: ${mesh.triangleCount} Dreiecke in ${duration} ms.")
             } catch (e: Throwable) {
                 _renderState.value = RenderState.Error("Fehler bei Geometrieberechnung: ${e.message}")
                 appendLog("FEHLER: ${e.message}")

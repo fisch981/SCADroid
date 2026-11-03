@@ -143,50 +143,10 @@ fun SCADroidApp(
                     )
                 },
                 actions = {
-                    // Speichern-Button: Fragt nach Dateiname & Speicherort
-                    IconButton(
-                        onClick = { saveFileLauncher.launch(currentFileName) },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Save,
-                            contentDescription = "Speichern unter...",
-                            tint = ScadGold,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Spacer(Modifier.width(2.dp))
-
-                    // F5: Schnellvorschau (wechselt direkt zur 3D-Ansicht)
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.triggerPreview()
-                            selectedTab = 1
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color(0xFF22252C),
-                            contentColor = Color.White
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3E434F)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        modifier = Modifier.padding(end = 4.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = "F5 Vorschau",
-                            tint = ScadGold,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(2.dp))
-                        Text("Vorschau", color = Color.White, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
-                    }
-
-                    // F6: CGAL Render (wechselt direkt zur 3D-Ansicht)
+                    // Render-Button: Führt CSG-Berechnung aus und wechselt direkt zur 3D-Ansicht
                     Button(
                         onClick = {
-                            viewModel.triggerFullRender()
+                            viewModel.render()
                             selectedTab = 1
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -194,20 +154,25 @@ fun SCADroidApp(
                             contentColor = Color(0xFF121212)
                         ),
                         shape = RoundedCornerShape(8.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        modifier = Modifier.padding(end = 2.dp)
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(end = 4.dp)
                     ) {
                         Icon(
-                            Icons.Default.ViewInAr,
-                            contentDescription = "F6 Render",
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Render",
                             tint = Color(0xFF121212),
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(Modifier.width(2.dp))
-                        Text("Render", color = Color(0xFF121212), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "Render",
+                            color = Color(0xFF121212),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
 
-                    // More Menu (File & Project Actions)
+                    // More Menu (Speichern, STL-Export, Öffnen, etc.)
                     Box {
                         IconButton(
                             onClick = { menuExpanded = true },
@@ -354,13 +319,7 @@ fun SCADroidApp(
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         ViewportScreen(
                             renderState = renderState,
-                            mesh = currentMesh,
-                            onExportStl = {
-                                val baseName = if (currentFileName.endsWith(".scad", ignoreCase = true)) {
-                                    currentFileName.substring(0, currentFileName.length - 5)
-                                } else currentFileName
-                                exportStlLauncher.launch("$baseName.stl")
-                            }
+                            mesh = currentMesh
                         )
                     }
                 }
@@ -373,13 +332,7 @@ fun SCADroidApp(
                     )
                     1 -> ViewportScreen(
                         renderState = renderState,
-                        mesh = currentMesh,
-                        onExportStl = {
-                            val baseName = if (currentFileName.endsWith(".scad", ignoreCase = true)) {
-                                currentFileName.substring(0, currentFileName.length - 5)
-                            } else currentFileName
-                            exportStlLauncher.launch("$baseName.stl")
-                        }
+                        mesh = currentMesh
                     )
                     2 -> CustomizerView(
                         parameters = customizerParams,

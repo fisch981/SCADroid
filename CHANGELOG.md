@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.9] - 2026-11-03
+
+### Geändert / Hinzugefügt
+- Redundanten Vorschau-Button und Speichersymbol entfernt, Render als einzige zentrale Berechnungsaktion und STL-Export ausschliesslich im Menue
+
 ## [0.1.8] - 2026-11-03
 
 ### Geändert / Hinzugefügt
