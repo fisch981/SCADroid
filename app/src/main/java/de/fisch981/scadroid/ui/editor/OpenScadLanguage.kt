@@ -117,6 +117,19 @@ class OpenScadAnalyzeManager : AnalyzeManager {
         val ref = content ?: return
         val builder = MappedSpans.Builder()
 
+        // Vorab-Scan: Prüfe für jede Zeile, ob weiter unten ein schließendes */ existiert.
+        // Verhindert, dass Tippfehler (z.B. /* [Qualitaet] *}}}{{{;;;}}}/) oder ungeschlossene Kommentare
+        // den gesamten restlichen OpenSCAD-Code als Kommentar grau färben!
+        val hasClosingAfter = BooleanArray(ref.lineCount)
+        var seenClose = false
+        for (idx in (ref.lineCount - 1) downTo 0) {
+            val l = ref.getLine(idx) ?: ""
+            if (l.contains(commentEndMarker)) {
+                seenClose = true
+            }
+            hasClosingAfter[idx] = seenClose
+        }
+
         var inBlockComment = false
 
         for (lineIdx in 0 until ref.lineCount) {
@@ -152,18 +165,37 @@ class OpenScadAnalyzeManager : AnalyzeManager {
                     break
                 }
 
-                // Mehrzeiliger Kommentar
+                // Mehrzeiliger Kommentar /*
                 if (c == '/' && i + 1 < len && line[i + 1] == '*') {
+                    // 1. Schließt er regulär mit */ auf derselben Zeile ab?
                     val endIdx = line.indexOf(commentEndMarker, i + 2)
-                    builder.addIfNeeded(lineIdx, i, TextStyle.makeStyle(EditorColorScheme.COMMENT))
                     if (endIdx != -1) {
+                        builder.addIfNeeded(lineIdx, i, TextStyle.makeStyle(EditorColorScheme.COMMENT))
                         builder.addIfNeeded(lineIdx, endIdx + 2, TextStyle.makeStyle(EditorColorScheme.TEXT_NORMAL))
                         i = endIdx + 2
-                    } else {
+                        continue
+                    }
+
+                    // 2. Schließt die Zeile später mit einem Slash '/' ab (z.B. /* [Qualitaet] *}}}{{{;;;}}}/)?
+                    val lastSlash = line.lastIndexOf('/')
+                    if (lastSlash > i + 1) {
+                        builder.addIfNeeded(lineIdx, i, TextStyle.makeStyle(EditorColorScheme.COMMENT))
+                        builder.addIfNeeded(lineIdx, lastSlash + 1, TextStyle.makeStyle(EditorColorScheme.TEXT_NORMAL))
+                        i = lastSlash + 1
+                        continue
+                    }
+
+                    // 3. Gibt es in einer nachfolgenden Zeile überhaupt ein schließendes */?
+                    if (lineIdx + 1 < ref.lineCount && hasClosingAfter[lineIdx + 1]) {
+                        builder.addIfNeeded(lineIdx, i, TextStyle.makeStyle(EditorColorScheme.COMMENT))
                         inBlockComment = true
                         break
+                    } else {
+                        // Kein */ im gesamten Rest der Datei: Behandle es nur als einzeiligen Kommentar,
+                        // damit nachfolgender OpenSCAD-Code (difference, cube, etc.) NICHT grau gefärbt wird!
+                        builder.addIfNeeded(lineIdx, i, TextStyle.makeStyle(EditorColorScheme.COMMENT))
+                        break
                     }
-                    continue
                 }
 
                 // String Literal "..."

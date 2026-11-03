@@ -128,23 +128,28 @@ fun SCADroidApp(
                 title = {
                     Text(
                         text = "SCADroid",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         color = Color.White,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 },
                 actions = {
                     // Speichern-Button: Fragt nach Dateiname & Speicherort
                     IconButton(
-                        onClick = { saveFileLauncher.launch(currentFileName) }
+                        onClick = { saveFileLauncher.launch(currentFileName) },
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             Icons.Default.Save,
                             contentDescription = "Speichern unter...",
                             tint = ScadGold,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
+
+                    Spacer(Modifier.width(2.dp))
 
                     // F5: Schnellvorschau (wechselt direkt zur 3D-Ansicht)
                     OutlinedButton(
@@ -158,6 +163,7 @@ fun SCADroidApp(
                         ),
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3E434F)),
                         shape = RoundedCornerShape(8.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                         modifier = Modifier.padding(end = 4.dp)
                     ) {
                         Icon(
@@ -181,7 +187,8 @@ fun SCADroidApp(
                             contentColor = Color(0xFF121212)
                         ),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.padding(end = 4.dp)
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(end = 2.dp)
                     ) {
                         Icon(
                             Icons.Default.ViewInAr,
@@ -195,11 +202,15 @@ fun SCADroidApp(
 
                     // More Menu (File & Project Actions)
                     Box {
-                        IconButton(onClick = { menuExpanded = true }) {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
                             Icon(
                                 Icons.Default.MoreVert,
                                 contentDescription = "Menü",
-                                tint = Color.White
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 

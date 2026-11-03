@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.7] - 2026-11-03
+
+### Geändert / Hinzugefügt
+- Header-Titel ohne Zeilenumbruch fixiert und fehlertolerantes Syntax-Highlighting gegen ungeschlossene Blockkommentare
+
 ## [0.1.6] - 2026-11-03
 
 ### Geändert / Hinzugefügt

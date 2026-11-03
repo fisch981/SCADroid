@@ -270,9 +270,10 @@ class ScadParser {
         val vectorVariables = mutableMapOf<String, List<Double>>()
         variables["\$fn"] = 32.0
 
-        // Kommentare entfernen
+        // Kommentare entfernen (reguläre mehrzeilige sowie fehlertolerante einzeilige /* ... Kommentare)
         val cleanCode = code
             .replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
+            .replace(Regex("/\\*[^\\n]*"), "")
             .replace(Regex("//.*"), "")
 
         // 1. Initialer Lauf für Variablen und Vektor-Variablen im Code
