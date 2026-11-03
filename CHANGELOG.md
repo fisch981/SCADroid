@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.2] - 2026-11-03
+
+### Ge√§ndert / Hinzugef√ºgt
+- Vollst‰ndige OpenSCAD-Kompatibilit‰t: Mathematische Ausdr¸cke (Trigonometrie in Grad, Potenzen, Konstanten), Vektor-Variablen & Indizierung, CSG difference/union/intersection mit verketteten Transformationen, Mirror, Color, For-Schleifen, User-Module, Auto-Completion und Symbol-Toolbar Fix
+
 ## [0.1.1] - 2026-11-03
 
 ### Ge√§ndert / Hinzugef√ºgt

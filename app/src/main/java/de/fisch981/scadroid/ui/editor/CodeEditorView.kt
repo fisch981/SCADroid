@@ -28,6 +28,7 @@ import de.fisch981.scadroid.ui.theme.DarkBorder
 import de.fisch981.scadroid.ui.theme.DarkSurface
 import de.fisch981.scadroid.ui.theme.ScadGold
 import io.github.rosemoe.sora.widget.CodeEditor
+import io.github.rosemoe.sora.widget.component.EditorAutoCompletion
 import io.github.rosemoe.sora.widget.schemes.SchemeDarcula
 
 @Composable
@@ -64,8 +65,8 @@ fun CodeEditorView(
                 AssistChip(
                     onClick = {
                         editorRef?.let { editor ->
-                            val cursor = editor.cursor
-                            editor.text.insert(cursor.leftLine, cursor.leftColumn, token)
+                            editor.requestFocus()
+                            editor.insertText(token, token.length)
                             onCodeChange(editor.text.toString())
                         }
                     },
@@ -85,7 +86,7 @@ fun CodeEditorView(
             }
         }
 
-        // Native Sora Code Editor in Darcula Dark Theme
+        // Native Sora Code Editor in Darcula Dark Theme mit OpenSCAD Autovervollständigung
         AndroidView(
             factory = { context ->
                 CodeEditor(context).apply {
@@ -100,6 +101,12 @@ fun CodeEditorView(
                     setTextSize(15f)
                     isLineNumberEnabled = true
                     isWordwrap = false
+
+                    // OpenSCAD Autovervollständigung aktivieren
+                    setEditorLanguage(OpenScadLanguage())
+                    val autoCompletion = getComponent(EditorAutoCompletion::class.java)
+                    autoCompletion.isEnabled = true
+                    autoCompletion.setCompletionWndPositionMode(EditorAutoCompletion.WINDOW_POS_MODE_FOLLOW_CURSOR_ALWAYS)
 
                     // Setze den Initialcode
                     setText(code)

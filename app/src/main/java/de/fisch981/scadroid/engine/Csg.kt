@@ -238,6 +238,19 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
         return CsgSolid(newPolys)
     }
 
+    fun mirror(normal: Vector3): CsgSolid {
+        val len = normal.length()
+        if (len < 1e-6f) return this
+        val n = normal.normalized()
+        val newPolys = polygons.map { p ->
+            val reflected = p.vertices.map { v ->
+                v - n * (2f * v.dot(n))
+            }
+            CsgPolygon(reflected.reversed(), color = p.color)
+        }
+        return CsgSolid(newPolys)
+    }
+
     fun setColor(color: Vector3): CsgSolid {
         val newPolys = polygons.map { p ->
             CsgPolygon(p.vertices, p.plane, color)
@@ -295,7 +308,7 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
             val bottomVerts = mutableListOf<Vector3>()
             val topVerts = mutableListOf<Vector3>()
 
-            val seg = segments.coerceIn(8, 64)
+            val seg = segments.coerceIn(3, 128)
             for (i in 0 until seg) {
                 val theta = (i.toDouble() / seg * 2.0 * Math.PI).toFloat()
                 val nextTheta = (((i + 1) % seg).toDouble() / seg * 2.0 * Math.PI).toFloat()
@@ -315,19 +328,27 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
                 val t0 = Vector3(tx0, ty0, z1)
                 val t1 = Vector3(tx1, ty1, z1)
 
-                // Side quad
-                polys.add(CsgPolygon(listOf(b0, b1, t1, t0), color = color))
+                if (r2 <= 1e-4f) {
+                    // Kegelspitze oben: Dreieck mit Spitze bei t0
+                    polys.add(CsgPolygon(listOf(b0, b1, t0), color = color))
+                } else if (r1 <= 1e-4f) {
+                    // Kegelspitze unten: Dreieck mit Spitze bei b0
+                    polys.add(CsgPolygon(listOf(b0, t1, t0), color = color))
+                } else {
+                    // Zylinder / Kegelstumpf: Viereck
+                    polys.add(CsgPolygon(listOf(b0, b1, t1, t0), color = color))
+                }
 
                 bottomVerts.add(b0)
                 topVerts.add(t0)
             }
 
             // Bottom cap (reversed winding)
-            if (r1 > 0f) {
+            if (r1 > 1e-4f) {
                 polys.add(CsgPolygon(bottomVerts.reversed(), color = color))
             }
             // Top cap
-            if (r2 > 0f) {
+            if (r2 > 1e-4f) {
                 polys.add(CsgPolygon(topVerts, color = color))
             }
 
