@@ -133,18 +133,13 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun newProject() {
-        val emptyTemplate = """
-            // Neues SCADroid Modell
-            ${'$'}fn = 32;
-
-            cube([20, 20, 10], center = true);
-        """.trimIndent()
+        val emptyTemplate = "\$fn = 32;\n"
         _code.value = emptyTemplate
         _currentFileName.value = "neues_modell.scad"
         prefs.edit().putString("current_file_name", "neues_modell.scad").apply()
         saveCodeInternal(emptyTemplate)
-        appendLog("Neues Projekt erstellt.")
-        _statusMessage.value = "Neues Projekt erstellt"
+        appendLog("Neues Modell erstellt (\$fn = 32;).")
+        _statusMessage.value = "Neues Modell erstellt"
         evaluateInternal()
     }
 

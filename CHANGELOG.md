@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.11] - 2026-11-03
+
+### Geändert / Hinzugefügt
+- Release v0.1.11: Neues Modell mit minimalem Template und Bestaetigungsdialog vor dem Loeschen
+
 ## [0.1.10] - 2026-11-03
 
 ### Geändert / Hinzugefügt

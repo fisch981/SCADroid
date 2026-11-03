@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.SaveAs
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewInAr
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -49,6 +50,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -95,6 +97,8 @@ fun SCADroidApp(
 
     val snackbarHostState = remember { SnackbarHostState() }
     var menuExpanded by remember { mutableStateOf(false) }
+    var showNewProjectConfirmDialog by remember { mutableStateOf(false) }
+    var showResetSampleConfirmDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(statusMessage) {
         statusMessage?.let {
@@ -196,7 +200,7 @@ fun SCADroidApp(
                                 leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = ScadGold) },
                                 onClick = {
                                     menuExpanded = false
-                                    viewModel.newProject()
+                                    showNewProjectConfirmDialog = true
                                 }
                             )
                             DropdownMenuItem(
@@ -231,7 +235,7 @@ fun SCADroidApp(
                                 leadingIcon = { Icon(Icons.Default.RestartAlt, contentDescription = null, tint = ScadGold) },
                                 onClick = {
                                     menuExpanded = false
-                                    viewModel.resetToSample()
+                                    showResetSampleConfirmDialog = true
                                 }
                             )
                             DropdownMenuItem(
@@ -296,6 +300,94 @@ fun SCADroidApp(
             }
         }
     ) { innerPadding ->
+        // Bestätigungs-Dialog: Neues Modell (löscht aktuellen Editor-Inhalt)
+        if (showNewProjectConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showNewProjectConfirmDialog = false },
+                title = {
+                    Text(
+                        "Neues Modell erstellen?",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        "Möchtest du wirklich ein neues Modell erstellen? Der aktuelle Editor-Inhalt wird dabei gelöscht.",
+                        color = Color(0xFFDDDDDD)
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showNewProjectConfirmDialog = false
+                            viewModel.newProject()
+                            selectedTab = 0
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFD32F2F),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Inhalt löschen & Neu", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showNewProjectConfirmDialog = false }
+                    ) {
+                        Text("Abbrechen", color = Color(0xFFB0B0B0))
+                    }
+                },
+                containerColor = DarkSurface,
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
+
+        // Bestätigungs-Dialog: Beispiel wiederherstellen
+        if (showResetSampleConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showResetSampleConfirmDialog = false },
+                title = {
+                    Text(
+                        "Beispiel laden?",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        "Möchtest du das OpenSCAD-Beispielmodell wiederherstellen? Nicht gespeicherte Änderungen gehen verloren.",
+                        color = Color(0xFFDDDDDD)
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showResetSampleConfirmDialog = false
+                            viewModel.resetToSample()
+                            selectedTab = 0
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = ScadGold,
+                            contentColor = Color(0xFF121212)
+                        )
+                    ) {
+                        Text("Laden", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showResetSampleConfirmDialog = false }
+                    ) {
+                        Text("Abbrechen", color = Color(0xFFB0B0B0))
+                    }
+                },
+                containerColor = DarkSurface,
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
