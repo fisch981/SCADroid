@@ -1,6 +1,9 @@
 package de.fisch981.scadroid.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.content.ContentResolver
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.fisch981.scadroid.engine.ScadParser
 import de.fisch981.scadroid.engine.TriangleMesh
@@ -13,32 +16,43 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class ProjectViewModel : ViewModel() {
+class ProjectViewModel(application: Application) : AndroidViewModel(application) {
 
     private val parser = ScadParser()
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    private val projectFile = File(application.filesDir, "current_project.scad")
 
-    private val _code = MutableStateFlow(
-        """// SCADroid parametrisches Modell
-/* [Geometrie] */
-breite = 30; // [10:1:60]
-hoehe = 15; // [5:1:40]
-bohrung = 7; // [2:1:14]
+    companion object {
+        val DEFAULT_SAMPLE_CODE = """
+            // SCADroid parametrisches Modell
+            /* [Geometrie] */
+            breite = 30; // [10:1:60]
+            hoehe = 15; // [5:1:40]
+            bohrung = 7; // [2:1:14]
 
-/* [Qualitaet] */
-${'$'}fn = 32;
+            /* [Qualitaet] */
+            ${'$'}fn = 32;
 
-difference() {
-    cube([breite, breite, hoehe], center = true);
-    cylinder(r = bohrung, h = hoehe + 4, center = true);
-}
-""".trimIndent()
-    )
+            difference() {
+                cube([breite, breite, hoehe], center = true);
+                cylinder(r = bohrung, h = hoehe + 4, center = true);
+            }
+        """.trimIndent()
+    }
+
+    private val _code = MutableStateFlow(loadInitialCode())
     val code: StateFlow<String> = _code.asStateFlow()
+
+    private val _currentFileName = MutableStateFlow<String>("current_project.scad")
+    val currentFileName: StateFlow<String> = _currentFileName.asStateFlow()
+
+    private val _statusMessage = MutableStateFlow<String?>(null)
+    val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
     private val _renderState = MutableStateFlow<RenderState>(RenderState.Idle)
     val renderState: StateFlow<RenderState> = _renderState.asStateFlow()
@@ -62,6 +76,18 @@ difference() {
         evaluateInternal(isFull = false)
     }
 
+    private fun loadInitialCode(): String {
+        return try {
+            if (projectFile.exists() && projectFile.length() > 0) {
+                projectFile.readText()
+            } else {
+                DEFAULT_SAMPLE_CODE
+            }
+        } catch (_: Exception) {
+            DEFAULT_SAMPLE_CODE
+        }
+    }
+
     private fun loadEngineInfo() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -77,11 +103,99 @@ difference() {
 
     fun updateCode(newCode: String) {
         _code.value = newCode
-        // Bei Code-Änderung extrahiere sofort die neuen Parameter
+        saveCodeInternal(newCode)
         viewModelScope.launch(Dispatchers.Default) {
             val parseRes = parser.parseAndEvaluate(newCode, paramOverrides)
             _customizerParams.value = parseRes.parameters
         }
+    }
+
+    private fun saveCodeInternal(codeToSave: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                projectFile.writeText(codeToSave)
+            } catch (e: Exception) {
+                appendLog("Auto-Save Fehler: ${e.message}")
+            }
+        }
+    }
+
+    fun saveCurrentProject() {
+        saveCodeInternal(_code.value)
+        appendLog("Projekt erfolgreich gespeichert in '${projectFile.name}'.")
+        _statusMessage.value = "Projekt gespeichert"
+    }
+
+    fun newProject() {
+        val emptyTemplate = """
+            // Neues SCADroid Modell
+            ${'$'}fn = 32;
+
+            cube([20, 20, 10], center = true);
+        """.trimIndent()
+        _code.value = emptyTemplate
+        _currentFileName.value = "neues_modell.scad"
+        saveCodeInternal(emptyTemplate)
+        appendLog("Neues Projekt erstellt.")
+        _statusMessage.value = "Neues Projekt erstellt"
+        evaluateInternal(isFull = false)
+    }
+
+    fun resetToSample() {
+        _code.value = DEFAULT_SAMPLE_CODE
+        _currentFileName.value = "beispiel_modell.scad"
+        saveCodeInternal(DEFAULT_SAMPLE_CODE)
+        appendLog("Beispiel-Modell geladen.")
+        _statusMessage.value = "Beispiel geladen"
+        evaluateInternal(isFull = false)
+    }
+
+    fun loadFromUri(uri: Uri, contentResolver: ContentResolver) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val inputStream = contentResolver.openInputStream(uri)
+                val loadedCode = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
+                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "modell.scad"
+                withContext(Dispatchers.Main) {
+                    _code.value = loadedCode
+                    _currentFileName.value = fileName
+                    saveCodeInternal(loadedCode)
+                    appendLog("Datei '$fileName' erfolgreich geladen (${loadedCode.length} Zeichen).")
+                    _statusMessage.value = "'$fileName' geladen"
+                    evaluateInternal(isFull = false)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    appendLog("Fehler beim Öffnen der Datei: ${e.message}")
+                    _statusMessage.value = "Fehler beim Laden"
+                }
+            }
+        }
+    }
+
+    fun saveToUri(uri: Uri, contentResolver: ContentResolver) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(_code.value.toByteArray(Charsets.UTF_8))
+                }
+                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "modell.scad"
+                withContext(Dispatchers.Main) {
+                    _currentFileName.value = fileName
+                    appendLog("Datei erfolgreich exportiert nach '$fileName'.")
+                    _statusMessage.value = "'$fileName' exportiert"
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    appendLog("Fehler beim Speichern der Datei: ${e.message}")
+                    _statusMessage.value = "Fehler beim Speichern"
+                }
+            }
+        }
+    }
+
+    fun clearStatusMessage() {
+        _statusMessage.value = null
     }
 
     fun updateParameter(param: CustomizerParam) {
@@ -90,11 +204,9 @@ difference() {
             is CustomizerParam.BooleanParam -> paramOverrides[param.name] = param.value
             is CustomizerParam.StringParam -> paramOverrides[param.name] = param.value
         }
-        // Aktualisiere Parameter-Liste im UI
         _customizerParams.value = _customizerParams.value.map {
             if (it.name == param.name) param else it
         }
-        // Live Neuberechnung bei Slider-Änderung
         evaluateInternal(isFull = false)
     }
 

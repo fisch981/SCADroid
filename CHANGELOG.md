@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.3] - 2026-11-03
+
+### Geändert / Hinzugefügt
+- Persistente Code-Speicherung (Auto-Save & �ffnen/Speichern von .scad-Dateien), funktionierende Symbolleiste & Snippet-Buttons mit Fokus-Commit, Auto-Completion bei Tastatureingabe aktiviert mit Vorschlags-Button und automatischer Klammer-Paarung
+
 ## [0.1.2] - 2026-11-03
 
 ### Geändert / Hinzugefügt

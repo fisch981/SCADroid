@@ -18,9 +18,11 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import de.fisch981.scadroid.ui.theme.DarkBackground
@@ -37,9 +39,9 @@ fun CodeEditorView(
     onCodeChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var editorRef: CodeEditor? = remember { null }
+    val editorState = remember { mutableStateOf<CodeEditor?>(null) }
 
-    val shortcutTokens = listOf(";", "{", "}", "[", "]", "(", ")", "=", "\$fn = ", "cube()", "cylinder()", "sphere()", "difference()", "union()")
+    val shortcutTokens = listOf("✨ Auto", ";", "{", "}", "[", "]", "(", ")", "=", "\$fn = ", "cube()", "cylinder()", "sphere()", "difference()", "union()")
 
     val chipColors = AssistChipDefaults.assistChipColors(
         containerColor = Color(0xFF282828),
@@ -53,7 +55,7 @@ fun CodeEditorView(
             .fillMaxSize()
             .background(DarkBackground)
     ) {
-        // Quick Symbol Toolbar
+        // Quick Symbol & Snippet Toolbar
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
@@ -62,11 +64,26 @@ fun CodeEditorView(
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
             items(shortcutTokens) { token ->
+                val isAuto = token == "✨ Auto"
                 AssistChip(
                     onClick = {
-                        editorRef?.let { editor ->
-                            editor.requestFocus()
-                            editor.insertText(token, token.length)
+                        val editor = editorState.value ?: return@AssistChip
+                        editor.requestFocus()
+                        if (isAuto) {
+                            val autoComp = editor.getComponent(EditorAutoCompletion::class.java)
+                            autoComp.requireCompletion()
+                        } else {
+                            when (token) {
+                                "{}" -> editor.commitText("{\n    \n}")
+                                "()" -> editor.commitText("()")
+                                "[]" -> editor.commitText("[]")
+                                "cube()" -> editor.commitText("cube([10, 10, 10]);")
+                                "cylinder()" -> editor.commitText("cylinder(h = 10, r = 5);")
+                                "sphere()" -> editor.commitText("sphere(r = 10);")
+                                "difference()" -> editor.commitText("difference() {\n    \n}")
+                                "union()" -> editor.commitText("union() {\n    \n}")
+                                else -> editor.commitText(token)
+                            }
                             onCodeChange(editor.text.toString())
                         }
                     },
@@ -74,11 +91,17 @@ fun CodeEditorView(
                         Text(
                             token,
                             style = labelStyle,
-                            color = ScadGold,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            color = if (isAuto) Color(0xFFFFD54F) else ScadGold,
+                            fontWeight = if (isAuto) FontWeight.Bold else FontWeight.Normal,
+                            fontFamily = if (isAuto) androidx.compose.ui.text.font.FontFamily.Default else androidx.compose.ui.text.font.FontFamily.Monospace
                         )
                     },
-                    colors = chipColors,
+                    colors = if (isAuto) {
+                        AssistChipDefaults.assistChipColors(
+                            containerColor = Color(0xFF383318),
+                            labelColor = Color(0xFFFFD54F)
+                        )
+                    } else chipColors,
                     border = chipBorder,
                     shape = RoundedCornerShape(6.dp),
                     modifier = Modifier.padding(end = 4.dp)
@@ -102,11 +125,19 @@ fun CodeEditorView(
                     isLineNumberEnabled = true
                     isWordwrap = false
 
+                    // Auto-Completion & Editing Props
+                    props.autoCompletionOnComposing = true
+                    props.symbolPairAutoCompletion = true
+                    props.autoIndent = true
+                    props.disallowSuggestions = false
+                    props.highlightMatchingDelimiters = true
+
                     // OpenSCAD Autovervollständigung aktivieren
                     setEditorLanguage(OpenScadLanguage())
                     val autoCompletion = getComponent(EditorAutoCompletion::class.java)
                     autoCompletion.isEnabled = true
-                    autoCompletion.setCompletionWndPositionMode(EditorAutoCompletion.WINDOW_POS_MODE_FOLLOW_CURSOR_ALWAYS)
+                    autoCompletion.setCompletionWndPositionMode(EditorAutoCompletion.WINDOW_POS_MODE_AUTO)
+                    autoCompletion.applyColorScheme()
 
                     // Setze den Initialcode
                     setText(code)
@@ -116,10 +147,11 @@ fun CodeEditorView(
                         onCodeChange(text.toString())
                     }
 
-                    editorRef = this
+                    editorState.value = this
                 }
             },
             update = { editor ->
+                editorState.value = editor
                 if (editor.text.toString() != code) {
                     val cursor = editor.cursor
                     val line = cursor.leftLine

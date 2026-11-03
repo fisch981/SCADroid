@@ -83,11 +83,9 @@ class OpenScadLanguage : EmptyLanguage() {
         }
 
         val prefix = line.substring(start, col)
-        if (prefix.isEmpty()) return
-
         val pLower = prefix.lowercase()
         for (snip in snippets) {
-            if (snip.label.lowercase().startsWith(pLower) || snip.label.lowercase().contains(pLower)) {
+            if (prefix.isEmpty() || snip.label.lowercase().startsWith(pLower) || snip.label.lowercase().contains(pLower)) {
                 val item = SimpleCompletionItem(
                     snip.label,
                     snip.desc,
@@ -99,5 +97,14 @@ class OpenScadLanguage : EmptyLanguage() {
             }
         }
         publisher.updateList()
+    }
+
+    override fun getSymbolPairs(): SymbolPairMatch {
+        return SymbolPairMatch().apply {
+            putPair('(', SymbolPairMatch.SymbolPair("(", ")"))
+            putPair('[', SymbolPairMatch.SymbolPair("[", "]"))
+            putPair('{', SymbolPairMatch.SymbolPair("{", "}"))
+            putPair('"', SymbolPairMatch.SymbolPair("\"", "\""))
+        }
     }
 }
