@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.10] - 2026-11-03
+
+### Geändert / Hinzugefügt
+- Release v0.1.10: Undo/Redo Buttons im Code-Editor und bereinigtes Menue ohne blauen Untertitel
+
 ## [0.1.9] - 2026-11-03
 
 ### Geändert / Hinzugefügt

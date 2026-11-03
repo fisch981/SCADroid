@@ -10,13 +10,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +52,8 @@ fun CodeEditorView(
     val editorState = remember { mutableStateOf<CodeEditor?>(null) }
     var currentPrefix by remember { mutableStateOf("") }
     var showAutoDropdown by remember { mutableStateOf(false) }
+    var canUndo by remember { mutableStateOf(false) }
+    var canRedo by remember { mutableStateOf(false) }
 
     val defaultSymbols = listOf(";", "{", "}", "[", "]", "(", ")", "=", "\$fn = ", "cube()", "cylinder()", "sphere()", "difference()", "union()")
 
@@ -76,9 +83,96 @@ fun CodeEditorView(
                 .fillMaxWidth()
                 .background(DarkSurface)
                 .border(1.dp, DarkBorder)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
-            // 1. Auto-Vervollständigungs-Button mit Dropdown
+            // 1. Undo-Button (Rückgängig)
+            item {
+                AssistChip(
+                    onClick = {
+                        editorState.value?.let { editor ->
+                            if (editor.canUndo()) {
+                                editor.undo()
+                                onCodeChange(editor.text.toString())
+                                canUndo = editor.canUndo()
+                                canRedo = editor.canRedo()
+                            }
+                        }
+                    },
+                    enabled = canUndo,
+                    leadingIcon = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Undo,
+                            contentDescription = "Rückgängig",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (canUndo) ScadGold else Color(0xFF666666)
+                        )
+                    },
+                    label = {
+                        Text(
+                            "Undo",
+                            style = labelStyle,
+                            color = if (canUndo) Color.White else Color(0xFF666666),
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = if (canUndo) Color(0xFF282828) else Color(0xFF1A1A1A),
+                        disabledContainerColor = Color(0xFF181818)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (canUndo) DarkBorder else Color(0xFF242424)
+                    ),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.padding(end = 4.dp)
+                )
+            }
+
+            // 2. Redo-Button (Wiederholen)
+            item {
+                AssistChip(
+                    onClick = {
+                        editorState.value?.let { editor ->
+                            if (editor.canRedo()) {
+                                editor.redo()
+                                onCodeChange(editor.text.toString())
+                                canUndo = editor.canUndo()
+                                canRedo = editor.canRedo()
+                            }
+                        }
+                    },
+                    enabled = canRedo,
+                    leadingIcon = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Redo,
+                            contentDescription = "Wiederholen",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (canRedo) ScadGold else Color(0xFF666666)
+                        )
+                    },
+                    label = {
+                        Text(
+                            "Redo",
+                            style = labelStyle,
+                            color = if (canRedo) Color.White else Color(0xFF666666),
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = if (canRedo) Color(0xFF282828) else Color(0xFF1A1A1A),
+                        disabledContainerColor = Color(0xFF181818)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (canRedo) DarkBorder else Color(0xFF242424)
+                    ),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.padding(end = 6.dp)
+                )
+            }
+
+            // 3. Auto-Vervollständigungs-Button mit Dropdown
             item {
                 Box {
                     AssistChip(
@@ -235,6 +329,7 @@ fun CodeEditorView(
                     props.autoIndent = true
                     props.disallowSuggestions = false
                     props.highlightMatchingDelimiters = true
+                    isUndoEnabled = true
 
                     // OpenSCAD Sprachunterstützung (Syntax-Highlighting & Vervollständigung)
                     val lang = OpenScadLanguage()
@@ -267,20 +362,30 @@ fun CodeEditorView(
                         }
                     }
 
+                    val syncUndoRedo = {
+                        canUndo = canUndo()
+                        canRedo = canRedo()
+                    }
+
                     subscribeAlways(io.github.rosemoe.sora.event.ContentChangeEvent::class.java) {
                         onCodeChange(text.toString())
                         updatePrefix()
+                        syncUndoRedo()
                     }
 
                     subscribeAlways(io.github.rosemoe.sora.event.SelectionChangeEvent::class.java) {
                         updatePrefix()
+                        syncUndoRedo()
                     }
 
                     editorState.value = this
+                    syncUndoRedo()
                 }
             },
             update = { editor ->
                 editorState.value = editor
+                canUndo = editor.canUndo()
+                canRedo = editor.canRedo()
                 if (editor.text.toString() != code) {
                     val cursor = editor.cursor
                     val line = cursor.leftLine
@@ -289,6 +394,8 @@ fun CodeEditorView(
                     try {
                         editor.setSelection(line, col)
                     } catch (_: Exception) {}
+                    canUndo = editor.canUndo()
+                    canRedo = editor.canRedo()
                 }
             },
             modifier = Modifier

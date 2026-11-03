@@ -216,12 +216,7 @@ fun SCADroidApp(
                                 }
                             )
                             DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text("Als STL exportieren...", color = Color.White, fontWeight = FontWeight.Bold)
-                                        Text("3D-Druck Datei (.stl) speichern", color = Color(0xFF64B5F6), style = MaterialTheme.typography.labelSmall)
-                                    }
-                                },
+                                text = { Text("Als STL exportieren...", color = Color.White) },
                                 leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null, tint = ScadGold) },
                                 onClick = {
                                     menuExpanded = false
