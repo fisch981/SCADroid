@@ -126,21 +126,12 @@ fun SCADroidApp(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = "SCADroid",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = if (currentFileName != "modell.scad" && currentFileName != "current_project.scad") currentFileName else engineVersion,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = ScadGold,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                    }
+                    Text(
+                        text = "SCADroid",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
                 },
                 actions = {
                     // Speichern-Button: Fragt nach Dateiname & Speicherort

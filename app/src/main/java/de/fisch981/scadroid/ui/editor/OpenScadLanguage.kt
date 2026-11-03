@@ -87,10 +87,13 @@ class OpenScadAnalyzeManager : AnalyzeManager {
     private val functions = setOf(
         "cube", "cylinder", "sphere", "circle", "square", "polygon", "polyhedron",
         "difference", "union", "intersection",
-        "translate", "rotate", "scale", "mirror", "color", "multmatrix",
-        "linear_extrude", "rotate_extrude", "minkowski", "hull",
+        "translate", "rotate", "scale", "mirror", "color", "multmatrix", "resize",
+        "linear_extrude", "rotate_extrude", "minkowski", "hull", "render",
+        "offset", "projection", "surface", "text", "import",
         "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-        "sqrt", "abs", "min", "max", "pow", "exp", "log", "ln", "sign", "round", "floor", "ceil"
+        "sqrt", "abs", "min", "max", "pow", "exp", "log", "ln", "sign", "round", "floor", "ceil",
+        "concat", "lookup", "str", "chr", "search", "version", "version_num", "parent_module",
+        "echo", "assert"
     )
 
     override fun setReceiver(receiver: StyleReceiver?) {
@@ -199,18 +202,16 @@ class OpenScadAnalyzeManager : AnalyzeManager {
                         word.startsWith("$") -> EditorColorScheme.KEYWORD
                         keywords.contains(word) -> EditorColorScheme.KEYWORD
                         functions.contains(word) -> EditorColorScheme.FUNCTION_NAME
-                        else -> EditorColorScheme.TEXT_NORMAL
+                        else -> EditorColorScheme.IDENTIFIER_NAME
                     }
 
-                    if (colorId != EditorColorScheme.TEXT_NORMAL) {
-                        builder.addIfNeeded(lineIdx, start, TextStyle.makeStyle(colorId))
-                        builder.addIfNeeded(lineIdx, i, TextStyle.makeStyle(EditorColorScheme.TEXT_NORMAL))
-                    }
+                    builder.addIfNeeded(lineIdx, start, TextStyle.makeStyle(colorId))
+                    builder.addIfNeeded(lineIdx, i, TextStyle.makeStyle(EditorColorScheme.TEXT_NORMAL))
                     continue
                 }
 
-                // Operatoren (+, -, *, /, =, <, >, etc.)
-                if (c in "+-*/%=<>!&|?:") {
+                // Operatoren & Begrenzer (+, -, *, /, =, <, >, !, ?, :, ,, ;, [, ], (, ), {, })
+                if (c in "+-*/%=<>!&|?:,;[](){}") {
                     builder.addIfNeeded(lineIdx, i, TextStyle.makeStyle(EditorColorScheme.OPERATOR))
                     builder.addIfNeeded(lineIdx, i + 1, TextStyle.makeStyle(EditorColorScheme.TEXT_NORMAL))
                     i++

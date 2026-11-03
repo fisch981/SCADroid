@@ -2,7 +2,8 @@ package de.fisch981.scadroid.ui.viewport
 
 import android.opengl.GLSurfaceView
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -63,15 +64,50 @@ fun ViewportScreen(
             .fillMaxSize()
             .background(Color(0xFF101216))
             .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    // 1 Finger oder 2 Finger Geste:
-                    if (zoom != 1f) {
-                        renderer.distance = (renderer.distance / zoom).coerceIn(10f, 600f)
-                    } else {
-                        // Rotation & Pan
-                        renderer.yaw = (renderer.yaw + pan.x * 0.4f) % 360f
-                        renderer.pitch = (renderer.pitch + pan.y * 0.3f).coerceIn(-85f, 85f)
-                    }
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val pressedChanges = event.changes.filter { it.pressed }
+                        val count = pressedChanges.size
+
+                        if (count == 1) {
+                            // 1 Finger: Drehung (Rotation um Zielpunkt / Drehpunkt)
+                            val change = pressedChanges[0]
+                            val delta = change.position - change.previousPosition
+                            if (delta.x != 0f || delta.y != 0f) {
+                                renderer.yaw = (renderer.yaw + delta.x * 0.35f) % 360f
+                                renderer.pitch = (renderer.pitch + delta.y * 0.25f).coerceIn(-85f, 85f)
+                                change.consume()
+                            }
+                        } else if (count >= 2) {
+                            // 2 Finger: Drehpunkt per Touch verschieben (Pan) & Pinch-to-Zoom
+                            val p1 = pressedChanges[0].position
+                            val p2 = pressedChanges[1].position
+                            val prev1 = pressedChanges[0].previousPosition
+                            val prev2 = pressedChanges[1].previousPosition
+
+                            // 1. Zoom
+                            val currentDist = (p1 - p2).getDistance()
+                            val prevDist = (prev1 - prev2).getDistance()
+                            if (prevDist > 1f && currentDist > 1f) {
+                                val zoomRatio = currentDist / prevDist
+                                if (zoomRatio > 0f) {
+                                    renderer.distance = (renderer.distance / zoomRatio).coerceIn(10f, 600f)
+                                }
+                            }
+
+                            // 2. Pan: Mittelpunkt der 2 Finger verschiebt den Drehpunkt
+                            val currentCenter = (p1 + p2) / 2f
+                            val prevCenter = (prev1 + prev2) / 2f
+                            val panDelta = currentCenter - prevCenter
+                            if (panDelta.x != 0f || panDelta.y != 0f) {
+                                renderer.panCamera(panDelta.x, panDelta.y)
+                            }
+
+                            pressedChanges.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
                 }
             }
     ) {

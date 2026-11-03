@@ -23,6 +23,7 @@ class ScadGlRenderer : GLSurfaceView.Renderer {
     var distance = 80f  // Kameraabstand
     var panX = 0f
     var panY = 0f
+    var panZ = 0f
 
     private val mvpMatrix = FloatArray(16)
     private val projectionMatrix = FloatArray(16)
@@ -69,9 +70,9 @@ class ScadGlRenderer : GLSurfaceView.Renderer {
 
         val eyeX = panX + distance * cos(radPitch) * sin(radYaw)
         val eyeY = panY - distance * cos(radPitch) * cos(radYaw)
-        val eyeZ = distance * sin(radPitch)
+        val eyeZ = panZ + distance * sin(radPitch)
 
-        Matrix.setLookAtM(viewMatrix, 0, eyeX, eyeY, eyeZ, panX, panY, 0f, 0f, 0f, 1f)
+        Matrix.setLookAtM(viewMatrix, 0, eyeX, eyeY, eyeZ, panX, panY, panZ, 0f, 0f, 1f)
 
         // 1. Grid & Achsen zeichnen
         drawGridAndAxes()
@@ -158,9 +159,33 @@ class ScadGlRenderer : GLSurfaceView.Renderer {
     fun resetCamera(mesh: TriangleMesh) {
         panX = mesh.center.x
         panY = mesh.center.y
+        panZ = mesh.center.z
         distance = max(mesh.boundingRadius * 2.8f, 30f)
         pitch = 30f
         yaw = 45f
+    }
+
+    /**
+     * Verschiebt den 3D-Drehpunkt (Pan) der Kamera anhand von 2-Finger-Touchbewegungen.
+     * Berücksichtigt die aktuelle Ausrichtung von Yaw und Pitch der Kamera.
+     */
+    fun panCamera(deltaScreenX: Float, deltaScreenY: Float) {
+        val scale = (distance / 400f).coerceIn(0.04f, 0.40f)
+        val radPitch = Math.toRadians(pitch.toDouble()).toFloat()
+        val radYaw = Math.toRadians(yaw.toDouble()).toFloat()
+
+        // Kamera-Rechts-Vektor
+        val rightX = cos(radYaw)
+        val rightY = sin(radYaw)
+
+        // Kamera-Aufwärts-Vektor (Z-Up System)
+        val upX = -sin(radPitch) * sin(radYaw)
+        val upY = sin(radPitch) * cos(radYaw)
+        val upZ = cos(radPitch)
+
+        panX -= (rightX * deltaScreenX - upX * deltaScreenY) * scale
+        panY -= (rightY * deltaScreenX - upY * deltaScreenY) * scale
+        panZ -= (-upZ * deltaScreenY) * scale
     }
 
     private fun buildGridAndAxes() {

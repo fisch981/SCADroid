@@ -221,7 +221,7 @@ fun CodeEditorView(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    colorScheme = SchemeDarcula()
+                    colorScheme = OpenScadColorScheme()
                     setBackgroundColor(AndroidColor.parseColor("#14161A"))
                     typefaceText = Typeface.MONOSPACE
                     typefaceLineNumber = Typeface.MONOSPACE
