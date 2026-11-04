@@ -246,6 +246,18 @@ fun SCADroidApp(
                                     viewModel.clearLogs()
                                 }
                             )
+                            HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 4.dp))
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Version ${de.fisch981.scadroid.BuildConfig.VERSION_NAME} (Build ${de.fisch981.scadroid.BuildConfig.VERSION_CODE})",
+                                        color = Color(0xFF888888),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF888888), modifier = Modifier.size(18.dp)) },
+                                onClick = { }
+                            )
                         }
                     }
                 },

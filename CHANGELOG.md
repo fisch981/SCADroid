@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.14] - 2026-11-04
+
+### Geändert / Hinzugefügt
+- Release v0.1.14: Eindeutige Versionsanzeige im Menue und versionierte APK-Dateien (SCADroid-v0.1.14.apk) im Root und Release
+
 ## [0.1.13] - 2026-11-04
 
 ### Geändert / Hinzugefügt

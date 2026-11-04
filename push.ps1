@@ -79,10 +79,10 @@ git push origin main
 # 5. GitHub Release erstellen / aktualisieren
 Write-Host "==> Erstelle GitHub Release v$newName..." -ForegroundColor Cyan
 try {
-    gh release create "v$newName" "SCADroid-release.apk" --title "SCADroid v$newName" --notes "$ChangeSummary"
+    gh release create "v$newName" "SCADroid-release.apk" "SCADroid-v$newName.apk" --title "SCADroid v$newName" --notes "$ChangeSummary"
 } catch {
     Write-Host "Hinweis: GitHub Release existiert bereits oder gh fehlerhaft, versuche Upload..." -ForegroundColor Yellow
-    gh release upload "v$newName" "SCADroid-release.apk" --clobber
+    gh release upload "v$newName" "SCADroid-release.apk" "SCADroid-v$newName.apk" --clobber
 }
 
 Write-Host "==> Erfolgreich veröffentlicht & gepusht: v$newName (Code $newCode)" -ForegroundColor Green

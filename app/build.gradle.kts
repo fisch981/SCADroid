@@ -13,8 +13,8 @@ android {
         applicationId = "de.fisch981.scadroid"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.1.13"
+        versionCode = 15
+        versionName = "0.1.14"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -113,7 +113,9 @@ tasks.register("copyReleaseApkToRoot") {
         if (apkFile.exists()) {
             val destFile = File(rootDir, "SCADroid-release.apk")
             apkFile.copyTo(destFile, overwrite = true)
-            println("Release APK kopiert nach: ${destFile.absolutePath}")
+            val versionedFile = File(rootDir, "SCADroid-v${android.defaultConfig.versionName}.apk")
+            apkFile.copyTo(versionedFile, overwrite = true)
+            println("Release APK kopiert nach: ${destFile.absolutePath} und ${versionedFile.absolutePath}")
         } else {
             throw GradleException("Release APK nicht gefunden unter: ${apkFile.absolutePath}")
         }
