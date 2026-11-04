@@ -28,7 +28,7 @@ class ScadMathEvaluator(
     private fun get(): Char = if (pos < clean.length) clean[pos++] else '\u0000'
 
     fun eval(expression: String): Double {
-        clean = expression.replace(" ", "")
+        clean = expression.filter { !it.isWhitespace() }
         pos = 0
         return try {
             parseTernary()
@@ -256,19 +256,24 @@ class ScadParser {
         val logMessages: List<String>
     )
 
-    private data class UserModule(
+    data class UserModule(
         val paramNames: List<String>,
         val defaultValues: Map<String, String>,
         val bodyTokens: List<String>
     )
 
+    val userModules = mutableMapOf<String, UserModule>()
+    val stringVariables = mutableMapOf<String, String>()
+    val vectorVariables = mutableMapOf<String, List<Double>>()
+    val variables = mutableMapOf<String, Double>()
+
     fun parseAndEvaluate(code: String, paramOverrides: Map<String, Any> = emptyMap()): ParseResult {
         val logs = mutableListOf<String>()
         val params = extractParameters(code)
 
-        val variables = mutableMapOf<String, Double>()
-        val vectorVariables = mutableMapOf<String, List<Double>>()
-        variables["\$fn"] = 32.0
+        if (!variables.containsKey("\$fn")) {
+            variables["\$fn"] = 32.0
+        }
 
         // Kommentare entfernen (reguläre mehrzeilige sowie fehlertolerante einzeilige /* ... Kommentare)
         val cleanCode = code
@@ -276,31 +281,49 @@ class ScadParser {
             .replace(Regex("/\\*[^\\n]*"), "")
             .replace(Regex("//.*"), "")
 
-        // 1. Initialer Lauf für Variablen und Vektor-Variablen im Code
-        val varRegex = Regex("(?m)^\\s*([a-zA-Z0-9_\\$]+)\\s*=\\s*([^;]+);")
-        for (match in varRegex.findAll(cleanCode)) {
-            val name = match.groupValues[1]
-            val expr = match.groupValues[2].trim()
-            if (expr.startsWith("[") && expr.endsWith("]")) {
-                val inner = expr.removeSurrounding("[", "]")
-                val parts = splitArgs(inner)
-                val tempMath = ScadMathEvaluator(variables, vectorVariables)
-                val vec = parts.map { tempMath.eval(it) }
-                vectorVariables[name] = vec
-                if (vec.isNotEmpty()) variables[name] = vec[0]
-            } else {
-                val tempMath = ScadMathEvaluator(variables, vectorVariables)
-                val v = tempMath.eval(expr)
-                variables[name] = v
-            }
-        }
-
-        // 2. UI-Overrides anwenden
+        // 0. Vorab Overrides einspielen, damit Referenzen im Code sofort aufgelöst werden können
         for ((k, v) in paramOverrides) {
             when (v) {
                 is Double -> variables[k] = v
                 is Float -> variables[k] = v.toDouble()
                 is Number -> variables[k] = v.toDouble()
+                is String -> stringVariables[k] = v
+                is Boolean -> variables[k] = if (v) 1.0 else 0.0
+            }
+        }
+
+        // 1. Initialer Lauf für Variablen: 3 Durchläufe für Vorwärts-/Rückwärts-Referenzen
+        val varRegex = Regex("(?s)([a-zA-Z0-9_\\$]+)\\s*=\\s*([^;]+);")
+        for (pass in 0 until 3) {
+            for (match in varRegex.findAll(cleanCode)) {
+                val name = match.groupValues[1]
+                val expr = match.groupValues[2].trim()
+
+                if ((expr.startsWith("\"") && expr.endsWith("\"")) || (expr.startsWith("'") && expr.endsWith("'"))) {
+                    stringVariables[name] = expr.substring(1, expr.length - 1)
+                } else if (expr.startsWith("[") && expr.endsWith("]")) {
+                    val inner = expr.removeSurrounding("[", "]")
+                    val parts = splitArgs(inner)
+                    val tempMath = ScadMathEvaluator(variables, vectorVariables)
+                    val vec = parts.map { tempMath.eval(it) }
+                    vectorVariables[name] = vec
+                    if (vec.isNotEmpty()) variables[name] = vec[0]
+                } else {
+                    val tempMath = ScadMathEvaluator(variables, vectorVariables)
+                    val v = tempMath.eval(expr)
+                    variables[name] = v
+                }
+            }
+        }
+
+        // 2. UI-Overrides nochmals verbindlich anwenden
+        for ((k, v) in paramOverrides) {
+            when (v) {
+                is Double -> variables[k] = v
+                is Float -> variables[k] = v.toDouble()
+                is Number -> variables[k] = v.toDouble()
+                is String -> stringVariables[k] = v
+                is Boolean -> variables[k] = if (v) 1.0 else 0.0
             }
         }
 
@@ -308,7 +331,6 @@ class ScadParser {
 
         // Tokenizer
         val tokens = tokenizeCode(cleanCode)
-        val userModules = mutableMapOf<String, UserModule>()
         var pos = 0
 
         fun peek(): String = if (pos < tokens.size) tokens[pos] else ""
@@ -377,16 +399,183 @@ class ScadParser {
             }
         }
 
-        // Parst ein einzelnes Statement oder einen Block { ... }
-        fun parseStatement(localVars: Map<String, Double> = emptyMap()): List<CsgSolid> {
-            if (pos >= tokens.size) return emptyList()
+        fun skipStatement() {
+            if (pos >= tokens.size) return
             val t = next()
+            if (t == "{") {
+                var depth = 1
+                while (pos < tokens.size && depth > 0) {
+                    val tok = next()
+                    if (tok == "{") depth++
+                    else if (tok == "}") depth--
+                }
+            } else if (t.matches(Regex("(?s)^if\\s*\\(.*\\)$"))) {
+                skipStatement()
+                if (pos < tokens.size && peek() == "else") {
+                    next() // consume 'else'
+                    skipStatement()
+                }
+            } else if (t.matches(Regex("(?s)^(translate|rotate|scale|mirror|color|linear_extrude|minkowski|hull|difference|union|intersection)\\s*\\(.*\\)$"))) {
+                skipStatement()
+            } else {
+                if (t != ";") {
+                    while (pos < tokens.size && peek() != ";" && peek() != "}") {
+                        next()
+                    }
+                    if (pos < tokens.size && peek() == ";") next()
+                }
+            }
+        }
+
+        fun evalBool(condStr: String, currentVars: Map<String, Double>, currentStrings: Map<String, String>): Boolean {
+            val trimmed = condStr.trim()
+            if (trimmed.contains("==")) {
+                val parts = trimmed.split("==", limit = 2)
+                val left = parts[0].trim()
+                val right = parts[1].trim()
+                val lStr = if ((left.startsWith("\"") && left.endsWith("\"")) || (left.startsWith("'") && left.endsWith("'"))) left.substring(1, left.length - 1).trim()
+                           else (currentStrings[left] ?: stringVariables[left] ?: "").trim()
+                val rStr = if ((right.startsWith("\"") && right.endsWith("\"")) || (right.startsWith("'") && right.endsWith("'"))) right.substring(1, right.length - 1).trim()
+                           else (currentStrings[right] ?: stringVariables[right] ?: "").trim()
+                if (lStr.isNotEmpty() || rStr.isNotEmpty() || left.startsWith("\"") || right.startsWith("\"") || left.startsWith("'") || right.startsWith("'")) {
+                    return lStr == rStr
+                }
+            }
+            if (trimmed.contains("!=")) {
+                val parts = trimmed.split("!=", limit = 2)
+                val left = parts[0].trim()
+                val right = parts[1].trim()
+                val lStr = if ((left.startsWith("\"") && left.endsWith("\"")) || (left.startsWith("'") && left.endsWith("'"))) left.substring(1, left.length - 1).trim()
+                           else (currentStrings[left] ?: stringVariables[left] ?: "").trim()
+                val rStr = if ((right.startsWith("\"") && right.endsWith("\"")) || (right.startsWith("'") && right.endsWith("'"))) right.substring(1, right.length - 1).trim()
+                           else (currentStrings[right] ?: stringVariables[right] ?: "").trim()
+                if (lStr.isNotEmpty() || rStr.isNotEmpty() || left.startsWith("\"") || right.startsWith("\"") || left.startsWith("'") || right.startsWith("'")) {
+                    return lStr != rStr
+                }
+            }
+
+            val math = ScadMathEvaluator(currentVars, vectorVariables)
+            val num = math.eval(trimmed)
+            return abs(num) > 1e-6
+        }
+
+        // Parst ein einzelnes Statement oder einen Block { ... }
+        fun parseStatement(
+            scopeVars: MutableMap<String, Double> = mutableMapOf(),
+            scopeStrings: MutableMap<String, String> = mutableMapOf()
+        ): List<CsgSolid> {
+            if (pos >= tokens.size) return emptyList()
+            val mathEval = ScadMathEvaluator(HashMap(variables).apply { putAll(scopeVars) }, vectorVariables)
+
+            val t = next()
+
+            // 0. assert(...) ignorieren
+            if (t.matches(Regex("(?s)^assert\\s*\\(.*\\)$"))) {
+                if (peek() == ";") next()
+                return emptyList()
+            }
+
+            // 0.1 if-Bedingung: if (cond) { ... } else if (...) ... else ...
+            if (t.matches(Regex("(?s)^if\\s*\\(.*\\)$"))) {
+                val condExpr = t.substringAfter("(").substringBeforeLast(")")
+                val cond = evalBool(condExpr, scopeVars, scopeStrings)
+
+                val result = if (cond) {
+                    parseStatement(scopeVars, scopeStrings)
+                } else {
+                    skipStatement()
+                    emptyList()
+                }
+
+                if (pos < tokens.size && peek() == "else") {
+                    next() // consume 'else'
+                    if (cond) {
+                        skipStatement()
+                        return result
+                    } else {
+                        return parseStatement(scopeVars, scopeStrings)
+                    }
+                }
+                return result
+            }
+
+            if (t == "else") {
+                skipStatement()
+                return emptyList()
+            }
+
+            // 0.2 Lokale Variablen-Zuweisung innerhalb Modulen / Blöcken (z.B. x = a + 5;)
+            if (peek() == "=") {
+                val varName = t
+                next() // '='
+                val exprTokens = mutableListOf<String>()
+                while (pos < tokens.size && peek() != ";") {
+                    exprTokens.add(next())
+                }
+                if (pos < tokens.size && peek() == ";") next() // ';'
+
+                val exprStr = exprTokens.joinToString(" ").trim()
+                if ((exprStr.startsWith("\"") && exprStr.endsWith("\"")) || (exprStr.startsWith("'") && exprStr.endsWith("'"))) {
+                    val s = exprStr.substring(1, exprStr.length - 1).trim()
+                    scopeStrings[varName] = s
+                    stringVariables[varName] = s
+                } else if (exprStr.startsWith("[") && exprStr.endsWith("]")) {
+                    val inner = exprStr.removeSurrounding("[", "]")
+                    val parts = splitArgs(inner)
+                    val vec = parts.map { mathEval.eval(it) }
+                    vectorVariables[varName] = vec
+                    if (vec.isNotEmpty()) {
+                        scopeVars[varName] = vec[0]
+                        variables[varName] = vec[0]
+                    }
+                } else {
+                    val evaluatedVal = mathEval.eval(exprStr)
+                    scopeVars[varName] = evaluatedVal
+                    variables[varName] = evaluatedVal
+                }
+                return emptyList()
+            }
+
+            if (t.contains("=") && !t.contains("(") && !t.contains("[")) {
+                val p = t.split("=", limit = 2)
+                val varName = p[0].trim()
+                val exprRight = if (p.size > 1) p[1].trim() else ""
+                val exprTokens = mutableListOf<String>()
+                if (exprRight.isNotEmpty()) exprTokens.add(exprRight)
+                while (pos < tokens.size && peek() != ";") {
+                    exprTokens.add(next())
+                }
+                if (pos < tokens.size && peek() == ";") next() // ';'
+
+                val exprStr = exprTokens.joinToString(" ").trim()
+                if ((exprStr.startsWith("\"") && exprStr.endsWith("\"")) || (exprStr.startsWith("'") && exprStr.endsWith("'"))) {
+                    val s = exprStr.substring(1, exprStr.length - 1).trim()
+                    scopeStrings[varName] = s
+                    stringVariables[varName] = s
+                } else if (exprStr.startsWith("[") && exprStr.endsWith("]")) {
+                    val inner = exprStr.removeSurrounding("[", "]")
+                    val parts = splitArgs(inner)
+                    val vec = parts.map { mathEval.eval(it) }
+                    vectorVariables[varName] = vec
+                    if (vec.isNotEmpty()) {
+                        scopeVars[varName] = vec[0]
+                        variables[varName] = vec[0]
+                    }
+                } else {
+                    val evaluatedVal = mathEval.eval(exprStr)
+                    scopeVars[varName] = evaluatedVal
+                    variables[varName] = evaluatedVal
+                }
+                return emptyList()
+            }
 
             // 1. Block { statement1; statement2; ... }
             if (t == "{") {
+                val blockVars = HashMap(variables).apply { putAll(scopeVars) }
+                val blockStrings = HashMap(stringVariables).apply { putAll(scopeStrings) }
                 val solids = mutableListOf<CsgSolid>()
                 while (pos < tokens.size && peek() != "}") {
-                    solids.addAll(parseStatement(localVars))
+                    solids.addAll(parseStatement(blockVars, blockStrings))
                 }
                 if (pos < tokens.size && peek() == "}") next() // '}'
                 return solids
@@ -431,7 +620,7 @@ class ScadParser {
             }
 
             // 3. For-Schleife: for (i = [0:5]) { ... } oder for (i = [start:step:end]) { ... }
-            if (t.startsWith("for") && t.contains("(") && t.endsWith(")")) {
+            if (t.matches(Regex("(?s)^for\\s*\\(.*\\)$"))) {
                 val inside = t.substringAfter("(").substringBeforeLast(")")
                 val eqIdx = inside.indexOf('=')
                 if (eqIdx != -1) {
@@ -491,7 +680,7 @@ class ScadParser {
                         while (pos < tokens.size) {
                             val tok = next()
                             bodyTokens.add(tok)
-                            if (tok == ";" || tok.matches(Regex("^(cube|cylinder|sphere|circle|square)\\s*\\(.*\\)$"))) {
+                            if (tok == ";" || tok.matches(Regex("(?s)^(cube|cylinder|sphere|circle|square)\\s*\\(.*\\)$"))) {
                                 if (peek() == ";") bodyTokens.add(next())
                                 break
                             }
@@ -501,15 +690,13 @@ class ScadParser {
                     val loopSolids = mutableListOf<CsgSolid>()
                     for (lv in loopValues) {
                         val subParser = ScadParser()
+                        subParser.userModules.putAll(userModules)
+                        subParser.stringVariables.putAll(scopeStrings)
+                        subParser.vectorVariables.putAll(vectorVariables)
                         val newVars = HashMap(variables)
-                        newVars.putAll(localVars)
+                        newVars.putAll(scopeVars)
                         newVars[loopVar] = lv
-                        // Führe Body mit neuer Variable aus
-                        var bPos = 0
-                        fun bPeek(): String = if (bPos < bodyTokens.size) bodyTokens[bPos] else ""
-                        fun bNext(): String = if (bPos < bodyTokens.size) bodyTokens[bPos++] else ""
 
-                        // Re-Parse helper für Loop-Body
                         val evaluated = subParser.parseAndEvaluate(
                             code = bodyTokens.joinToString(" "),
                             paramOverrides = newVars
@@ -524,32 +711,42 @@ class ScadParser {
                 }
             }
 
-            // 4. CSG Operationen: difference(), union(), intersection()
-            if (t.matches(Regex("^(difference|union|intersection)\\s*\\(.*\\)$"))) {
+            // 4. CSG Operationen: difference(), union(), intersection(), minkowski(), hull()
+            if (t.matches(Regex("(?s)^(difference|union|intersection|minkowski|hull)\\s*\\(.*\\)$"))) {
                 val op = t.substringBefore("(").trim()
                 val children = mutableListOf<CsgSolid>()
-                children.addAll(parseStatement(localVars))
+                children.addAll(parseStatement(scopeVars, scopeStrings))
 
                 if (children.isEmpty()) return emptyList()
                 var res = children[0]
-                for (i in 1 until children.size) {
-                    res = when (op) {
-                        "difference" -> res.difference(children[i])
-                        "intersection" -> res.intersection(children[i])
-                        else -> res.union(children[i])
+                when (op) {
+                    "minkowski" -> {
+                        for (i in 1 until children.size) res = res.minkowski(children[i])
+                    }
+                    "hull" -> {
+                        res = CsgSolid.hull(children)
+                    }
+                    else -> {
+                        for (i in 1 until children.size) {
+                            res = when (op) {
+                                "difference" -> res.difference(children[i])
+                                "intersection" -> res.intersection(children[i])
+                                else -> res.union(children[i])
+                            }
+                        }
                     }
                 }
                 return listOf(res)
             }
 
             // 5. Transformationen: translate(...), rotate(...), scale(...), mirror(...), color(...)
-            if (t.matches(Regex("^(translate|rotate|scale|mirror|color)\\s*\\(.*\\)$"))) {
+            if (t.matches(Regex("(?s)^(translate|rotate|scale|mirror|color)\\s*\\(.*\\)$"))) {
                 val transName = t.substringBefore("(").trim()
                 val argContent = t.substringAfter("(").substringBeforeLast(")")
                 val args = parseArguments(argContent)
 
                 // Hole Kind-Elemente
-                val children = parseStatement(localVars)
+                val children = parseStatement(scopeVars, scopeStrings)
                 if (children.isEmpty()) return emptyList()
 
                 var combined = children[0]
@@ -589,13 +786,13 @@ class ScadParser {
             }
 
             // 6. Extrusionen: linear_extrude(...)
-            if (t.matches(Regex("^linear_extrude\\s*\\(.*\\)$"))) {
+            if (t.matches(Regex("(?s)^linear_extrude\\s*\\(.*\\)$"))) {
                 val argContent = t.substringAfter("(").substringBeforeLast(")")
                 val args = parseArguments(argContent)
                 val h = mathEval.eval(args["height"] ?: args["arg0"] ?: "10").toFloat()
                 val center = (args["center"] ?: args["arg1"] ?: "false").trim() == "true"
 
-                val children = parseStatement(localVars)
+                val children = parseStatement(scopeVars, scopeStrings)
                 if (children.isEmpty()) return emptyList()
 
                 var combined = children[0]
@@ -606,7 +803,7 @@ class ScadParser {
             }
 
             // 7. Primitives: cube(...); cylinder(...); sphere(...); square(...); circle(...);
-            if (t.matches(Regex("^cube\\s*\\(.*\\)$"))) {
+            if (t.matches(Regex("(?s)^cube\\s*\\(.*\\)$"))) {
                 val argContent = t.substringAfter("(").substringBeforeLast(")")
                 val args = parseArguments(argContent)
                 val sizeStr = args["size"] ?: args["arg0"] ?: "[10,10,10]"
@@ -617,7 +814,7 @@ class ScadParser {
                 return listOf(CsgSolid.cube(size, center))
             }
 
-            if (t.matches(Regex("^cylinder\\s*\\(.*\\)$"))) {
+            if (t.matches(Regex("(?s)^cylinder\\s*\\(.*\\)$"))) {
                 val argContent = t.substringAfter("(").substringBeforeLast(")")
                 val args = parseArguments(argContent)
 
@@ -645,13 +842,13 @@ class ScadParser {
                 if (args.containsKey("d2")) r2 = (mathEval.eval(args["d2"]!!) / 2.0).toFloat()
 
                 val center = (args["center"] ?: args["arg3"] ?: "false").trim() == "true"
-                val fn = (args["\$fn"]?.let { mathEval.eval(it) } ?: (localVars["\$fn"] ?: variables["\$fn"] ?: 32.0)).toInt().coerceIn(3, 128)
+                val fn = (args["\$fn"]?.let { mathEval.eval(it) } ?: (scopeVars["\$fn"] ?: variables["\$fn"] ?: 32.0)).toInt().coerceIn(3, 128)
 
                 if (peek() == ";") next()
                 return listOf(CsgSolid.cylinder(h, r1, r2, fn, center))
             }
 
-            if (t.matches(Regex("^sphere\\s*\\(.*\\)$"))) {
+            if (t.matches(Regex("(?s)^sphere\\s*\\(.*\\)$"))) {
                 val argContent = t.substringAfter("(").substringBeforeLast(")")
                 val args = parseArguments(argContent)
                 var r = 10f
@@ -659,7 +856,7 @@ class ScadParser {
                 else if (args.containsKey("d")) r = (mathEval.eval(args["d"]!!) / 2.0).toFloat()
                 else if (args.containsKey("arg0")) r = mathEval.eval(args["arg0"]!!).toFloat()
 
-                val fn = (args["\$fn"]?.let { mathEval.eval(it) } ?: (localVars["\$fn"] ?: variables["\$fn"] ?: 24.0)).toInt().coerceIn(6, 64)
+                val fn = (args["\$fn"]?.let { mathEval.eval(it) } ?: (scopeVars["\$fn"] ?: variables["\$fn"] ?: 24.0)).toInt().coerceIn(6, 64)
                 val slices = fn
                 val stacks = (fn * 0.75).toInt().coerceAtLeast(4)
 
@@ -667,7 +864,7 @@ class ScadParser {
                 return listOf(CsgSolid.sphere(r, slices, stacks))
             }
 
-            if (t.matches(Regex("^square\\s*\\(.*\\)$"))) {
+            if (t.matches(Regex("(?s)^square\\s*\\(.*\\)$"))) {
                 val argContent = t.substringAfter("(").substringBeforeLast(")")
                 val args = parseArguments(argContent)
                 val sizeStr = args["size"] ?: args["arg0"] ?: "[10,10]"
@@ -678,7 +875,7 @@ class ScadParser {
                 return listOf(CsgSolid.cube(size, center))
             }
 
-            if (t.matches(Regex("^circle\\s*\\(.*\\)$"))) {
+            if (t.matches(Regex("(?s)^circle\\s*\\(.*\\)$"))) {
                 val argContent = t.substringAfter("(").substringBeforeLast(")")
                 val args = parseArguments(argContent)
                 var r = 10f
@@ -686,7 +883,7 @@ class ScadParser {
                 else if (args.containsKey("d")) r = (mathEval.eval(args["d"]!!) / 2.0).toFloat()
                 else if (args.containsKey("arg0")) r = mathEval.eval(args["arg0"]!!).toFloat()
 
-                val fn = (args["\$fn"]?.let { mathEval.eval(it) } ?: (localVars["\$fn"] ?: variables["\$fn"] ?: 32.0)).toInt().coerceIn(3, 128)
+                val fn = (args["\$fn"]?.let { mathEval.eval(it) } ?: (scopeVars["\$fn"] ?: variables["\$fn"] ?: 32.0)).toInt().coerceIn(3, 128)
                 if (peek() == ";") next()
                 return listOf(CsgSolid.cylinder(1f, r, r, fn, center = false))
             }
@@ -699,24 +896,40 @@ class ScadParser {
                 val passedArgs = parseArguments(argContent)
 
                 val callVars = HashMap(variables)
-                callVars.putAll(localVars)
+                callVars.putAll(scopeVars)
+                val callStrings = HashMap(stringVariables)
+                callStrings.putAll(scopeStrings)
 
                 // Standardwerte setzen
                 for ((pName, pDef) in module.defaultValues) {
-                    callVars[pName] = mathEval.eval(pDef)
+                    val trimmedDef = pDef.trim()
+                    if ((trimmedDef.startsWith("\"") && trimmedDef.endsWith("\"")) || (trimmedDef.startsWith("'") && trimmedDef.endsWith("'"))) {
+                        callStrings[pName] = trimmedDef.substring(1, trimmedDef.length - 1)
+                    } else {
+                        callVars[pName] = mathEval.eval(trimmedDef)
+                    }
                 }
                 // Übergebene Argumente (positional & named)
                 for ((idx, pName) in module.paramNames.withIndex()) {
-                    if (passedArgs.containsKey(pName)) {
-                        callVars[pName] = mathEval.eval(passedArgs[pName]!!)
-                    } else if (passedArgs.containsKey("arg$idx")) {
-                        callVars[pName] = mathEval.eval(passedArgs["arg$idx"]!!)
+                    val rawArg = passedArgs[pName] ?: passedArgs["arg$idx"]
+                    if (rawArg != null) {
+                        val argVal = rawArg.trim()
+                        if ((argVal.startsWith("\"") && argVal.endsWith("\"")) || (argVal.startsWith("'") && argVal.endsWith("'"))) {
+                            callStrings[pName] = argVal.substring(1, argVal.length - 1)
+                        } else if (callStrings.containsKey(argVal)) {
+                            callStrings[pName] = callStrings[argVal]!!
+                        } else {
+                            callVars[pName] = mathEval.eval(argVal)
+                        }
                     }
                 }
 
                 if (peek() == ";") next()
 
                 val subParser = ScadParser()
+                subParser.userModules.putAll(userModules)
+                subParser.stringVariables.putAll(callStrings)
+                subParser.vectorVariables.putAll(vectorVariables)
                 val evaluated = subParser.parseAndEvaluate(
                     code = module.bodyTokens.joinToString(" "),
                     paramOverrides = callVars
@@ -733,8 +946,10 @@ class ScadParser {
         }
 
         val allSolids = mutableListOf<CsgSolid>()
+        val topVars = HashMap(variables)
+        val topStrings = HashMap(stringVariables)
         while (pos < tokens.size) {
-            allSolids.addAll(parseStatement())
+            allSolids.addAll(parseStatement(topVars, topStrings))
         }
 
         val finalSolid = if (allSolids.isEmpty()) {
@@ -835,6 +1050,20 @@ class ScadParser {
 
             if (c.isWhitespace()) {
                 i++
+                continue
+            }
+
+            // String-Literale "..." oder '...'
+            if (c == '"' || c == '\'') {
+                val quote = c
+                val start = i
+                i++
+                while (i < len && code[i] != quote) {
+                    if (code[i] == '\\' && i + 1 < len) i++
+                    i++
+                }
+                if (i < len && code[i] == quote) i++
+                tokens.add(code.substring(start, i))
                 continue
             }
 

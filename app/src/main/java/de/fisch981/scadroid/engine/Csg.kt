@@ -60,7 +60,8 @@ class Plane(
                     if (ti != 1) b.add(vi)
 
                     if ((ti or tj) == 3) {
-                        val t = (w - normal.dot(vi)) / normal.dot(vj - vi)
+                        val denom = normal.dot(vj - vi)
+                        val t = if (abs(denom) > 1e-6f) ((w - normal.dot(vi)) / denom).coerceIn(0f, 1f) else 0.5f
                         val v = vi + (vj - vi) * t
                         f.add(v)
                         b.add(v)
@@ -150,8 +151,12 @@ class CsgNode(polygons: List<CsgPolygon>? = null) {
         return list
     }
 
-    fun build(list: List<CsgPolygon>) {
+    fun build(list: List<CsgPolygon>, depth: Int = 0) {
         if (list.isEmpty()) return
+        if (depth > 40) {
+            polygons.addAll(list)
+            return
+        }
         if (plane == null) plane = list[0].plane
         val p = plane ?: return
 
@@ -164,11 +169,11 @@ class CsgNode(polygons: List<CsgPolygon>? = null) {
 
         if (f.isNotEmpty()) {
             if (front == null) front = CsgNode()
-            front?.build(f)
+            front?.build(f, depth + 1)
         }
         if (b.isNotEmpty()) {
             if (back == null) back = CsgNode()
-            back?.build(b)
+            back?.build(b, depth + 1)
         }
     }
 }
@@ -250,6 +255,10 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
         }
         return CsgSolid(newPolys)
     }
+
+    fun minkowski(other: CsgSolid): CsgSolid = minkowski(this, other)
+
+    fun hull(other: CsgSolid): CsgSolid = hull(listOf(this, other))
 
     fun setColor(color: Vector3): CsgSolid {
         val newPolys = polygons.map { p ->
@@ -391,6 +400,177 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
                         polys.add(CsgPolygon(listOf(p0, p1, p2, p3), color = color))
                     }
                 }
+            }
+            return CsgSolid(polys)
+        }
+
+        fun hull(solids: List<CsgSolid>, color: Vector3 = Vector3(0.97f, 0.74f, 0.22f)): CsgSolid {
+            if (solids.isEmpty()) return CsgSolid(emptyList())
+            if (solids.size == 1) return solids[0]
+            val allVerts = mutableListOf<Vector3>()
+            for (s in solids) {
+                for (p in s.polygons) {
+                    allVerts.addAll(p.vertices)
+                }
+            }
+            return convexHull(allVerts, color)
+        }
+
+        fun minkowski(a: CsgSolid, b: CsgSolid, color: Vector3 = Vector3(0.97f, 0.74f, 0.22f)): CsgSolid {
+            if (a.polygons.isEmpty()) return b
+            if (b.polygons.isEmpty()) return a
+
+            val vertsA = a.polygons.flatMap { it.vertices }.distinct()
+            var vertsB = b.polygons.flatMap { it.vertices }.distinct()
+
+            if (vertsA.size * vertsB.size > 800 && vertsB.size > 32) {
+                val step = (vertsB.size / 32).coerceAtLeast(1)
+                vertsB = vertsB.filterIndexed { index, _ -> index % step == 0 }
+            }
+
+            val sumPoints = ArrayList<Vector3>(vertsA.size * vertsB.size)
+            for (va in vertsA) {
+                for (vb in vertsB) {
+                    sumPoints.add(va + vb)
+                }
+            }
+            return convexHull(sumPoints, color)
+        }
+
+        fun convexHull(points: List<Vector3>, color: Vector3 = Vector3(0.97f, 0.74f, 0.22f)): CsgSolid {
+            if (points.size < 4) return CsgSolid(emptyList())
+
+            val unique = mutableListOf<Vector3>()
+            for (p in points) {
+                if (unique.none { (it - p).lengthSquared() < 1e-6f }) {
+                    unique.add(p)
+                }
+            }
+            if (unique.size < 4) return CsgSolid(emptyList())
+
+            val p0 = unique.minByOrNull { it.x }!!
+            val p1 = unique.maxByOrNull { (it - p0).lengthSquared() }!!
+            val lineDir = (p1 - p0).normalized()
+            val p2 = unique.maxByOrNull { p ->
+                val v = p - p0
+                (v - lineDir * v.dot(lineDir)).lengthSquared()
+            }!!
+            val normal0 = (p1 - p0).cross(p2 - p0).normalized()
+            val p3 = unique.maxByOrNull { abs((it - p0).dot(normal0)) }!!
+
+            val distP3 = abs((p3 - p0).dot(normal0))
+            if (distP3 < 1e-4f) {
+                return makeCoplanarHull(unique, color)
+            }
+
+            data class Tri(val a: Vector3, val b: Vector3, val c: Vector3) {
+                val normal: Vector3 = (b - a).cross(c - a).normalized()
+                val d: Float = normal.dot(a)
+                fun canSee(p: Vector3): Boolean = (normal.dot(p) - d) > 1e-4f
+            }
+
+            val center = (p0 + p1 + p2 + p3) * 0.25f
+            val faces = mutableListOf<Tri>()
+
+            fun addOrientedTri(a: Vector3, b: Vector3, c: Vector3) {
+                val n = (b - a).cross(c - a).normalized()
+                if (n.dot(center - a) > 0) {
+                    faces.add(Tri(a, c, b))
+                } else {
+                    faces.add(Tri(a, b, c))
+                }
+            }
+
+            addOrientedTri(p0, p1, p2)
+            addOrientedTri(p0, p1, p3)
+            addOrientedTri(p0, p2, p3)
+            addOrientedTri(p1, p2, p3)
+
+            data class UnorderedEdge(val u: Vector3, val v: Vector3)
+
+            for (p in unique) {
+                if (p == p0 || p == p1 || p == p2 || p == p3) continue
+
+                val visible = faces.filter { it.canSee(p) }
+                if (visible.isEmpty()) continue
+
+                val edgeCount = mutableMapOf<UnorderedEdge, Int>()
+                val directedEdges = mutableListOf<Pair<Vector3, Vector3>>()
+
+                for (f in visible) {
+                    val edges = listOf(Pair(f.a, f.b), Pair(f.b, f.c), Pair(f.c, f.a))
+                    for (e in edges) {
+                        val key = UnorderedEdge(e.first, e.second)
+                        edgeCount[key] = (edgeCount[key] ?: 0) + 1
+                        directedEdges.add(e)
+                    }
+                }
+
+                val horizon = directedEdges.filter { e ->
+                    edgeCount[UnorderedEdge(e.first, e.second)] == 1
+                }
+
+                faces.removeAll(visible)
+                for (e in horizon) {
+                    addOrientedTri(e.first, e.second, p)
+                }
+            }
+
+            val polygons = faces.map {
+                CsgPolygon(listOf(it.a, it.b, it.c), color = color)
+            }
+            return CsgSolid(polygons)
+        }
+
+        private fun makeCoplanarHull(points: List<Vector3>, color: Vector3): CsgSolid {
+            val sorted = points.sortedWith(compareBy({ it.x }, { it.y }))
+            if (sorted.size < 3) return CsgSolid(emptyList())
+
+            val lower = mutableListOf<Vector3>()
+            for (p in sorted) {
+                while (lower.size >= 2) {
+                    val a = lower[lower.size - 2]
+                    val b = lower[lower.size - 1]
+                    if ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) <= 0) {
+                        lower.removeAt(lower.size - 1)
+                    } else break
+                }
+                lower.add(p)
+            }
+
+            val upper = mutableListOf<Vector3>()
+            for (p in sorted.reversed()) {
+                while (upper.size >= 2) {
+                    val a = upper[upper.size - 2]
+                    val b = upper[upper.size - 1]
+                    if ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) <= 0) {
+                        upper.removeAt(upper.size - 1)
+                    } else break
+                }
+                upper.add(p)
+            }
+
+            lower.removeAt(lower.size - 1)
+            upper.removeAt(upper.size - 1)
+            val ring2d = lower + upper
+            if (ring2d.size < 3) return CsgSolid(emptyList())
+
+            val minZ = points.minOf { it.z }
+            val maxZ = points.maxOf { it.z }
+            val h = if (maxZ - minZ > 1e-4f) maxZ - minZ else 1f
+            val baseZ = if (maxZ - minZ > 1e-4f) minZ else 0f
+
+            val bRing = ring2d.map { Vector3(it.x, it.y, baseZ) }
+            val tRing = ring2d.map { Vector3(it.x, it.y, baseZ + h) }
+
+            val polys = mutableListOf<CsgPolygon>()
+            polys.add(CsgPolygon(bRing.reversed(), color = color))
+            polys.add(CsgPolygon(tRing, color = color))
+
+            val n = ring2d.size
+            for (i in 0 until n) {
+                val next = (i + 1) % n
+                polys.add(CsgPolygon(listOf(bRing[i], bRing[next], tRing[next], tRing[i]), color = color))
             }
             return CsgSolid(polys)
         }

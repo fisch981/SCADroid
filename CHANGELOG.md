@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.13] - 2026-11-04
+
+### Geändert / Hinzugefügt
+- CSG-Engine Update: Vollstaendige Unterstuetzung fuer if/else, minkowski, hull, String-Variablen, lokale Zuweisungen und verschachtelte Modul-Hierarchien
+
 ## [0.1.12] - 2026-11-04
 
 ### Geändert / Hinzugefügt

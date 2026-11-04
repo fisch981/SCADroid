@@ -237,4 +237,114 @@ class CsgEngineTest {
         assertEquals(0, mesh.triangleCount)
         assertEquals(0, mesh.vertexCount)
     }
+
+    @Test
+    fun testMinkowskiAndHull() {
+        val minkowskiCode = """
+            minkowski() {
+                cube([10, 10, 10], center = true);
+                sphere(r = 2, ${'$'}fn = 8);
+            }
+        """.trimIndent()
+        val p1 = ScadParser()
+        val r1 = p1.parseAndEvaluate(minkowskiCode)
+        val m1 = TriangleMesh.fromSolid(r1.solid)
+        assertTrue("Minkowski should produce geometry (got ${m1.triangleCount})", m1.triangleCount > 0)
+
+        val hullCode = """
+            hull() {
+                translate([0, 0, 0]) cube([5, 5, 5]);
+                translate([20, 0, 0]) cube([5, 5, 5]);
+            }
+        """.trimIndent()
+        val p2 = ScadParser()
+        val r2 = p2.parseAndEvaluate(hullCode)
+        val m2 = TriangleMesh.fromSolid(r2.solid)
+        assertTrue("Hull should produce geometry (got ${m2.triangleCount})", m2.triangleCount > 0)
+    }
+
+    @Test
+    fun testIfElseAndStringVariables() {
+        val code = """
+            output = "both";
+
+            module partA() {
+                cube([10, 10, 10]);
+            }
+
+            module partB() {
+                cylinder(h = 10, r = 5);
+            }
+
+            if (output == "case") {
+                partA();
+            } else if (output == "lid") {
+                partB();
+            } else if (output == "both") {
+                partA();
+                translate([20, 0, 0]) partB();
+            }
+        """.trimIndent()
+
+        val parser = ScadParser()
+        val result = parser.parseAndEvaluate(code)
+        val mesh = TriangleMesh.fromSolid(result.solid)
+        assertTrue("If-Else string match should evaluate 'both' branch", mesh.triangleCount > 12)
+        assertTrue("Mesh maxBound.x should extend to partB", mesh.maxBound.x > 15f)
+    }
+
+    @Test
+    fun testESP32CaseGehaeuseSnippet() {
+        val esp32Code = """
+            ${'$'}fn = 16;
+            output = "both";
+            pcb_width = 28.0;
+            pcb_depth = 55.4;
+            wall = 4.0;
+            outer_width = pcb_width + 2 * wall;
+            outer_depth = pcb_depth + 2 * wall;
+            case_height = 20.0;
+            corner_r = 2.0;
+
+            module rounded_box(width, depth, height, radius) {
+                intersection() {
+                    minkowski() {
+                        cube([width - 2 * radius, depth - 2 * radius, height], center = true);
+                        sphere(r = radius);
+                    }
+                    cube([width, depth, height], center = true);
+                }
+            }
+
+            module case_body() {
+                translate([0, 0, case_height / 2])
+                    rounded_box(outer_width, outer_depth, case_height, corner_r);
+            }
+
+            module case_bottom() {
+                case_body();
+            }
+
+            module lid() {
+                translate([0, 0, 2])
+                    cube([outer_width, outer_depth, 4], center = true);
+            }
+
+            if (output == "case") {
+                case_bottom();
+            } else if (output == "lid") {
+                lid();
+            } else if (output == "both") {
+                case_bottom();
+                translate([outer_width + 10, 0, 0]) lid();
+            }
+        """.trimIndent()
+
+        val parser = ScadParser()
+        val result = parser.parseAndEvaluate(esp32Code)
+        val mesh = TriangleMesh.fromSolid(result.solid)
+
+        println("ESP32 Case mesh triangles: ${mesh.triangleCount}, min=${mesh.minBound}, max=${mesh.maxBound}")
+        assertTrue("ESP32 Case should produce valid geometry (triangles > 50, got ${mesh.triangleCount})", mesh.triangleCount > 50)
+    }
 }

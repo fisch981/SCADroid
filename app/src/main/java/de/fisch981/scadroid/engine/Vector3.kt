@@ -24,6 +24,7 @@ data class Vector3(
     )
 
     fun length(): Float = sqrt(x * x + y * y + z * z)
+    fun lengthSquared(): Float = x * x + y * y + z * z
 
     fun normalized(): Vector3 {
         val len = length()
