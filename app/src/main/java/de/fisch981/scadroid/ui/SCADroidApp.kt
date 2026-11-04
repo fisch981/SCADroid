@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RestartAlt
@@ -246,7 +247,7 @@ fun SCADroidApp(
                                     viewModel.clearLogs()
                                 }
                             )
-                            HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 4.dp))
+                            androidx.compose.material3.Divider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 4.dp))
                             DropdownMenuItem(
                                 text = {
                                     Text(

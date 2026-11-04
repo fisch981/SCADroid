@@ -62,7 +62,13 @@ if ($existingChangelog -match '(?s)(# Changelog.*?---\s*\r?\n\r?\n)(.*)') {
 # 3. Release APK kompilieren
 Write-Host "==> Kompiliere Release-APK v$newName..." -ForegroundColor Cyan
 $env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot"
+Remove-Item "SCADroid-release.apk" -ErrorAction SilentlyContinue
+Remove-Item "SCADroid-v*.apk" -ErrorAction SilentlyContinue
+
 & ".\gradlew.bat" copyReleaseApkToRoot
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Gradle Build ist fehlgeschlagen (Exit Code $LASTEXITCODE)!"
+}
 
 if (-not (Test-Path "SCADroid-release.apk")) {
     Write-Error "Release APK konnte nicht im Root-Verzeichnis erstellt werden!"
