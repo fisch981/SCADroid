@@ -225,10 +225,25 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         evaluateInternal()
     }
 
+    private fun resolveDisplayName(uri: Uri, contentResolver: ContentResolver, fallback: String = "modell.scad"): String {
+        try {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) {
+                        val name = cursor.getString(idx)
+                        if (!name.isNullOrBlank()) return name
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: fallback
+    }
+
     fun loadFromUri(uri: Uri, contentResolver: ContentResolver) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "modell.scad"
+                val fileName = resolveDisplayName(uri, contentResolver, "modell.scad")
                 if (fileName.endsWith(".stl", ignoreCase = true)) {
                     val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
                     val destFile = File(getApplication<Application>().filesDir, fileName)

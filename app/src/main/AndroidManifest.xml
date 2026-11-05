@@ -19,13 +19,14 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.SCADroid">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Intent Filter für .scad Dateien -->
+            <!-- Intent Filter 1: Direktes Öffnen (VIEW / EDIT) über Dateiendung (.scad / .stl) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.EDIT" />
@@ -35,7 +36,44 @@
                 <data android:scheme="content" />
                 <data android:mimeType="*/*" />
                 <data android:host="*" />
+                <data android:pathSuffix=".scad" />
+                <data android:pathSuffix=".SCAD" />
+                <data android:pathSuffix=".stl" />
+                <data android:pathSuffix=".STL" />
                 <data android:pathPattern=".*\\.scad" />
+                <data android:pathPattern=".*\\..*\\.scad" />
+                <data android:pathPattern=".*\\..*\\..*\\.scad" />
+                <data android:pathPattern=".*\\.SCAD" />
+            </intent-filter>
+
+            <!-- Intent Filter 2: Direktes Öffnen für Content-URIs ohne Dateiendung im Pfad (z. B. Downloads / Dateimanager / Messenger) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/x-openscad" />
+                <data android:mimeType="application/openscad" />
+                <data android:mimeType="text/x-openscad" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="model/stl" />
+                <data android:mimeType="application/sla" />
+            </intent-filter>
+
+            <!-- Intent Filter 3: Teilen / Freigeben ("Datei wird freigegeben" / Share-Menü) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/x-openscad" />
+                <data android:mimeType="application/openscad" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="model/stl" />
+                <data android:mimeType="application/sla" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
     </application>

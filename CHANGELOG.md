@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.20] - 2026-11-05
+
+### Geändert / Hinzugefügt
+- Ermoeglicht das direkte Oeffnen (VIEW/EDIT) sowie Teilen/Freigeben (SEND) von .scad- und .stl-Dateien aus dem Dateimanager, Downloads und Messengern direkt in SCADroid.
+
 ## [0.1.19] - 2026-11-05
 
 ### Geändert / Hinzugefügt
