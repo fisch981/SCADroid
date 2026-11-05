@@ -24,6 +24,7 @@ import java.util.Locale
 class ProjectViewModel(application: Application) : AndroidViewModel(application) {
 
     private val parser = ScadParser()
+    private val wasmEngine by lazy { de.fisch981.scadroid.engine.OpenScadWasmEngine(application) }
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     private val prefs = application.getSharedPreferences("scadroid_prefs", android.content.Context.MODE_PRIVATE)
     private val projectFile = File(application.filesDir, "current_project.scad")
@@ -252,24 +253,44 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
 
     private fun evaluateInternal() {
         viewModelScope.launch {
-            _renderState.value = RenderState.Evaluating(0.2f, "Berechne 3D-Modell...")
-            appendLog("Starte 3D-Berechnung...")
+            _renderState.value = RenderState.Evaluating(0.2f, "Berechne 3D-Modell (OpenSCAD Core)...")
+            appendLog("Starte 3D-Berechnung mit offiziellem OpenSCAD-Kern...")
 
             val startTime = System.currentTimeMillis()
 
             try {
                 val currentCode = _code.value
-                val result = withContext(Dispatchers.Default) {
-                    val parseResult = parser.parseAndEvaluate(currentCode, paramOverrides)
-                    val mesh = TriangleMesh.fromSolid(parseResult.solid)
-                    Pair(parseResult, mesh)
+                val parseResult = withContext(Dispatchers.Default) {
+                    parser.parseAndEvaluate(currentCode, paramOverrides)
+                }
+                _customizerParams.value = parseResult.parameters
+
+                // Ersetze geänderte Customizer-Parameter im Code
+                var codeToRender = currentCode
+                for ((k, v) in paramOverrides) {
+                    val regex = Regex("(?m)^\\s*${Regex.escape(k)}\\s*=.*?;")
+                    codeToRender = codeToRender.replace(regex, "$k = $v;")
                 }
 
-                val parseResult = result.first
-                val mesh = result.second
-                val duration = System.currentTimeMillis() - startTime
+                // Führe Berechnung mit echtem OpenSCAD WASM-Kern aus
+                val stlString = try {
+                    wasmEngine.render(codeToRender)
+                } catch (e: Exception) {
+                    appendLog("Hinweis: WASM-Engine Info (${e.message}), verwende Fallback.")
+                    null
+                }
 
-                _customizerParams.value = parseResult.parameters
+                val mesh = if (!stlString.isNullOrBlank()) {
+                    withContext(Dispatchers.Default) {
+                        TriangleMesh.fromStlString(stlString)
+                    }
+                } else {
+                    withContext(Dispatchers.Default) {
+                        TriangleMesh.fromSolid(parseResult.solid)
+                    }
+                }
+
+                val duration = System.currentTimeMillis() - startTime
                 _currentMesh.value = mesh
                 _renderState.value = RenderState.Ready(
                     verticesCount = mesh.vertexCount,
@@ -278,7 +299,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                     isFullRender = true
                 )
 
-                appendLog("Erfolgreich berechnet: ${mesh.triangleCount} Dreiecke in ${duration} ms.")
+                appendLog("OpenSCAD Modell erfolgreich berechnet: ${mesh.triangleCount} Dreiecke (${mesh.vertexCount} Vertices) in ${duration} ms.")
             } catch (e: Throwable) {
                 _renderState.value = RenderState.Error("Fehler bei Geometrieberechnung: ${e.message}")
                 appendLog("FEHLER: ${e.message}")

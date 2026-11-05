@@ -74,6 +74,89 @@ class TriangleMesh(
     companion object {
         val EMPTY = fromSolid(CsgSolid(emptyList()))
 
+        fun fromStlString(stl: String, color: Vector3 = Vector3(0.97f, 0.74f, 0.22f)): TriangleMesh {
+            val lines = stl.lineSequence()
+            val vertices = ArrayList<Vector3>(10000)
+            val normals = ArrayList<Vector3>(10000)
+
+            var curNormal = Vector3.UNIT_Z
+            var minX = Float.MAX_VALUE
+            var minY = Float.MAX_VALUE
+            var minZ = Float.MAX_VALUE
+            var maxX = -Float.MAX_VALUE
+            var maxY = -Float.MAX_VALUE
+            var maxZ = -Float.MAX_VALUE
+
+            for (rawLine in lines) {
+                val line = rawLine.trim()
+                if (line.startsWith("facet normal")) {
+                    val parts = line.split("\\s+".toRegex())
+                    if (parts.size >= 4) {
+                        val nx = parts[2].toFloatOrNull() ?: 0f
+                        val ny = parts[3].toFloatOrNull() ?: 0f
+                        val nz = parts[4].toFloatOrNull() ?: 1f
+                        curNormal = Vector3(nx, ny, nz)
+                    }
+                } else if (line.startsWith("vertex")) {
+                    val parts = line.split("\\s+".toRegex())
+                    if (parts.size >= 4) {
+                        val x = parts[1].toFloatOrNull() ?: 0f
+                        val y = parts[2].toFloatOrNull() ?: 0f
+                        val z = parts[3].toFloatOrNull() ?: 0f
+                        vertices.add(Vector3(x, y, z))
+                        normals.add(curNormal)
+
+                        if (x < minX) minX = x
+                        if (y < minY) minY = y
+                        if (z < minZ) minZ = z
+                        if (x > maxX) maxX = x
+                        if (y > maxY) maxY = y
+                        if (z > maxZ) maxZ = z
+                    }
+                }
+            }
+
+            if (vertices.isEmpty()) {
+                return EMPTY
+            }
+
+            val totalVertices = (vertices.size / 3) * 3
+            val vBuf = ByteBuffer.allocateDirect(totalVertices * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            val nBuf = ByteBuffer.allocateDirect(totalVertices * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            val cBuf = ByteBuffer.allocateDirect(totalVertices * 4 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+
+            for (i in 0 until totalVertices) {
+                val v = vertices[i]
+                vBuf.put(v.x)
+                vBuf.put(v.y)
+                vBuf.put(v.z)
+
+                val n = normals[i]
+                nBuf.put(n.x)
+                nBuf.put(n.y)
+                nBuf.put(n.z)
+
+                cBuf.put(color.x)
+                cBuf.put(color.y)
+                cBuf.put(color.z)
+                cBuf.put(1.0f)
+            }
+
+            vBuf.position(0)
+            nBuf.position(0)
+            cBuf.position(0)
+
+            return TriangleMesh(
+                vertexBuffer = vBuf,
+                normalBuffer = nBuf,
+                colorBuffer = cBuf,
+                vertexCount = totalVertices,
+                triangleCount = totalVertices / 3,
+                minBound = Vector3(minX, minY, minZ),
+                maxBound = Vector3(maxX, maxY, maxZ)
+            )
+        }
+
         fun fromSolid(solid: CsgSolid): TriangleMesh {
             val triangles = mutableListOf<Triple<Vector3, Vector3, Vector3>>()
             val normals = mutableListOf<Vector3>()

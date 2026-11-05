@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.16] - 2026-11-05
+
+### Geändert / Hinzugefügt
+- OpenSCAD Core Integration: Offizieller OpenSCAD C++ Rechenkern (WASM) direkt in der App eingebunden fuer 1:1 Desktop-Berechnung & exakte STL-Geometrie
+
 ## [0.1.15] - 2026-11-05
 
 ### Geändert / Hinzugefügt

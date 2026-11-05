@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SCADroid OpenSCAD Engine</title>
+</head>
+<body>
+  <script type="module">
+    import { createOpenSCAD } from "./openscad.js";
+
+    let instance = null;
+
+    window.initOpenScad = async function() {
+      try {
+        if (!instance) {
+          instance = await createOpenSCAD();
+        }
+        if (window.AndroidBridge && window.AndroidBridge.onEngineReady) {
+          window.AndroidBridge.onEngineReady();
+        }
+      } catch (err) {
+        if (window.AndroidBridge && window.AndroidBridge.onError) {
+          window.AndroidBridge.onError("Init Error: " + err);
+        }
+      }
+    };
+
+    window.renderScad = async function(scadCode) {
+      try {
+        if (!instance) {
+          instance = await createOpenSCAD();
+        }
+        const stlString = await instance.renderToStl(scadCode);
+        if (window.AndroidBridge) {
+          if (stlString.length > 300000) {
+            window.AndroidBridge.onRenderChunkStart(stlString.length);
+            const chunkSize = 200000;
+            for (let i = 0; i < stlString.length; i += chunkSize) {
+              window.AndroidBridge.onRenderChunk(stlString.substring(i, i + chunkSize));
+            }
+            window.AndroidBridge.onRenderChunkEnd();
+          } else {
+            window.AndroidBridge.onRenderSuccess(stlString);
+          }
+        }
+      } catch (err) {
+        if (window.AndroidBridge && window.AndroidBridge.onError) {
+          window.AndroidBridge.onError("Render Error: " + err);
+        }
+      }
+    };
+
+    window.renderScadBase64 = function(b64) {
+      try {
+        const binString = atob(b64);
+        const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
+        const decoded = new TextDecoder().decode(bytes);
+        return window.renderScad(decoded);
+      } catch (err) {
+        if (window.AndroidBridge && window.AndroidBridge.onError) {
+          window.AndroidBridge.onError("Base64 Decode Error: " + err);
+        }
+      }
+    };
+
+    window.initOpenScad();
+  </script>
+</body>
+</html>
