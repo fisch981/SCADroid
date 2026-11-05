@@ -36,7 +36,7 @@ var OpenSCAD = (() => {
     var quit_ = (status, toThrow) => {
       throw toThrow;
     };
-    var _scriptName = import.meta.url;
+    var _scriptName = "";
     var scriptDirectory = "";
     function locateFile(path) {
       if (Module["locateFile"]) {
@@ -4977,50 +4977,173 @@ var OpenSCAD = (() => {
     return moduleRtn;
   };
 })();
+function getCompiledWasmModule() {
+  if (!globalThis._cachedWasmModulePromise) {
+    globalThis._cachedWasmModulePromise = wasm();
+  }
+  return globalThis._cachedWasmModulePromise;
+}
+
+function base64ToUint8Array(b64) {
+  var isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
+  if (isNode) {
+    return new Uint8Array(Buffer.from(b64, 'base64'));
+  }
+  var raw = globalThis.atob(b64);
+  var len = raw.length;
+  var bytes = new Uint8Array(len);
+  for (var i = 0; i < len; i++) {
+    bytes[i] = raw.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function uint8ArrayToBase64(bytes) {
+  var isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
+  if (isNode) {
+    return Buffer.from(bytes).toString('base64');
+  }
+  var binary = "";
+  var chunk = 32768;
+  for (var i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return globalThis.btoa(binary);
+}
+
+function prepareScadForManifold(code) {
+  if (/\bmodule\s+sphere\b/.test(code)) return code;
+  return code.replace(/(\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*")|\bsphere\s*\(/g, function(match, commentOrStr) {
+    if (commentOrStr) return match;
+    return "rotate([0.037, 0.053, 0.071]) sphere(";
+  });
+}
+
+var FONTS_CONF_XML = '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n  <dir>/fonts</dir>\n  <alias><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>\n  <alias><family>Helvetica</family><prefer><family>Liberation Sans</family></prefer></alias>\n  <alias><family>sans-serif</family><prefer><family>Liberation Sans</family></prefer></alias>\n</fontconfig>';
+
+function setupInstanceFilesystem(instance, scadCode) {
+  try {
+    try { instance.FS.mkdir("/fonts"); } catch (e) {}
+    instance.FS.writeFile("/fonts/fonts.conf", FONTS_CONF_XML);
+    if (!globalThis._cachedFontBytes && globalThis.AndroidBridge && typeof globalThis.AndroidBridge.getFontBase64 === "function") {
+      var fontB64 = globalThis.AndroidBridge.getFontBase64();
+      if (fontB64 && fontB64.length > 0) {
+        globalThis._cachedFontBytes = base64ToUint8Array(fontB64);
+      }
+    }
+    if (globalThis._cachedFontBytes) {
+      instance.FS.writeFile("/fonts/LiberationSans-Regular.ttf", globalThis._cachedFontBytes);
+    }
+    if (globalThis.AndroidBridge && typeof globalThis.AndroidBridge.getProjectFileBase64 === "function") {
+      var importRegex = /\bimport\s*\(\s*(?:file\s*=\s*)?"([^"]+)"/g;
+      var m;
+      while ((m = importRegex.exec(scadCode)) !== null) {
+        var fname = m[1];
+        var fileB64 = globalThis.AndroidBridge.getProjectFileBase64(fname);
+        if (fileB64 && fileB64.length > 0) {
+          var cleanName = fname.replace(/^\/+/, "");
+          instance.FS.writeFile("/" + cleanName, base64ToUint8Array(fileB64));
+        }
+      }
+    }
+  } catch (fsErr) {
+    console.warn("[OpenSCAD FS Setup Warning]:", fsErr);
+  }
+}
+
 async function initWasm(options = {}) {
   const defaultPrint = text => console.log("[OpenSCAD]:", text);
   const defaultPrintErr = text => {
-    // Only treat it as an error if it's not just informational output
     if (text.toLowerCase().includes("error")) {
       console.error("[OpenSCAD Error]:", text);
     } else {
       console.log("[OpenSCAD]:", text);
     }
   };
-  const wasmBinary = await wasm();
+  const wasmBinary = await getCompiledWasmModule();
   const module = {
     noInitialRun: true,
     noExitRuntime: true,
+    ...options,
     print: options.print || defaultPrint,
     printErr: options.printErr || defaultPrintErr,
     onerror: e => console.error("[OpenSCAD Error]:", e),
     instantiateWasm(imports, receiveInstance) {
       WebAssembly.instantiate(wasmBinary, imports).then(receiveInstance);
-    },
-    ...options
+    }
   };
   const openscadWasm = await OpenSCAD(module);
   return openscadWasm;
 }
+
 async function createOpenSCAD(options = {}) {
-  const instance = await initWasm(options);
+  await getCompiledWasmModule();
+  let lastInstance = null;
   return {
+    async renderToBinaryStlBase64(code) {
+      const logs = [];
+      const errors = [];
+      const instance = await initWasm({
+        ...options,
+        print: text => {
+          logs.push(text);
+          if (options.print) options.print(text);
+          else console.log("[OpenSCAD]:", text);
+        },
+        printErr: text => {
+          logs.push(text);
+          if (text.includes("ERROR:") || text.includes("Can't parse file")) {
+            errors.push(text);
+          }
+          if (options.printErr) options.printErr(text);
+          else console.log("[OpenSCAD]:", text);
+        }
+      });
+      lastInstance = instance;
+      setupInstanceFilesystem(instance, code);
+      const preparedCode = prepareScadForManifold(code);
+      instance.FS.writeFile("/input.scad", preparedCode);
+      const exitCode = instance.callMain(["--backend=Manifold", "--export-format=binstl", "/input.scad", "-o", "/output.stl"]);
+      const allLogs = logs.join("\n");
+      if (allLogs.includes("Current top level object is empty")) {
+        return "";
+      }
+      let outBytes = null;
+      try {
+        outBytes = instance.FS.readFile("/output.stl");
+      } catch (readErr) {
+        if (errors.length > 0) {
+          throw new Error(errors.join("\n"));
+        }
+        throw new Error("OpenSCAD erzeugte keine Ausgabedatei (Exit-Code " + exitCode + "). Log: " + allLogs);
+      }
+      if (!outBytes || outBytes.length < 84) {
+        if (errors.length > 0) {
+          throw new Error(errors.join("\n"));
+        }
+        return "";
+      }
+      return uint8ArrayToBase64(outBytes);
+    },
     async renderToStl(code) {
-      // Write code to input file
-      instance.FS.writeFile("/input.scad", code);
-      // Run OpenSCAD with appropriate flags
-      instance.callMain(["/input.scad", "-o", "/output.stl"]);
-      // Read output file
+      const instance = await initWasm(options);
+      lastInstance = instance;
+      setupInstanceFilesystem(instance, code);
+      const preparedCode = prepareScadForManifold(code);
+      instance.FS.writeFile("/input.scad", preparedCode);
+      instance.callMain(["--backend=Manifold", "/input.scad", "-o", "/output.stl"]);
+      const allCheck = instance.FS.analyzePath("/output.stl");
+      if (!allCheck.exists) return "";
       const result = instance.FS.readFile("/output.stl", {
         encoding: "utf8"
       });
-      // Cleanup
-      instance.FS.unlink("/input.scad");
-      instance.FS.unlink("/output.stl");
       return result;
     },
-    getInstance() {
-      return instance;
+    async getInstanceAsync() {
+      if (!lastInstance) {
+        lastInstance = await initWasm(options);
+      }
+      return lastInstance;
     }
   };
 }

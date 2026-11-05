@@ -9,6 +9,25 @@
   <script>
     let instance = null;
 
+    function createEngineOptions() {
+      return {
+        print: function(text) {
+          if (text && (text.startsWith("ECHO:") || text.includes("Total rendering time"))) {
+            if (window.AndroidBridge && window.AndroidBridge.onConsoleLog) {
+              window.AndroidBridge.onConsoleLog(text);
+            }
+          }
+        },
+        printErr: function(text) {
+          if (text && (text.startsWith("WARNING:") || text.startsWith("ERROR:") || text.startsWith("ECHO:"))) {
+            if (window.AndroidBridge && window.AndroidBridge.onConsoleLog) {
+              window.AndroidBridge.onConsoleLog(text);
+            }
+          }
+        }
+      };
+    }
+
     window.initOpenScad = async function() {
       try {
         if (!instance) {
@@ -16,7 +35,7 @@
           if (typeof fn !== 'function') {
             throw new Error("createOpenSCAD is not defined on window/globalThis");
           }
-          instance = await fn();
+          instance = await fn(createEngineOptions());
         }
         if (window.AndroidBridge && window.AndroidBridge.onEngineReady) {
           window.AndroidBridge.onEngineReady();
@@ -36,19 +55,19 @@
           if (typeof fn !== 'function') {
             throw new Error("createOpenSCAD is not defined on window/globalThis");
           }
-          instance = await fn();
+          instance = await fn(createEngineOptions());
         }
-        const stlString = await instance.renderToStl(scadCode);
+        const b64Stl = await instance.renderToBinaryStlBase64(scadCode);
         if (window.AndroidBridge) {
-          if (stlString.length > 300000) {
-            window.AndroidBridge.onRenderChunkStart(stlString.length);
+          if (b64Stl.length > 300000) {
+            window.AndroidBridge.onRenderChunkStart(b64Stl.length);
             const chunkSize = 200000;
-            for (let i = 0; i < stlString.length; i += chunkSize) {
-              window.AndroidBridge.onRenderChunk(stlString.substring(i, i + chunkSize));
+            for (let i = 0; i < b64Stl.length; i += chunkSize) {
+              window.AndroidBridge.onRenderChunk(b64Stl.substring(i, i + chunkSize));
             }
             window.AndroidBridge.onRenderChunkEnd();
           } else {
-            window.AndroidBridge.onRenderSuccess(stlString);
+            window.AndroidBridge.onRenderSuccess(b64Stl);
           }
         }
       } catch (err) {

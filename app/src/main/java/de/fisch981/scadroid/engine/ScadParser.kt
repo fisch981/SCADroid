@@ -1023,7 +1023,7 @@ class ScadParser {
         return ParseResult(finalSolid, params, logs)
     }
 
-    private fun extractParameters(code: String): List<CustomizerParam> {
+    fun extractParameters(code: String): List<CustomizerParam> {
         val result = mutableListOf<CustomizerParam>()
         var currentGroup = "Allgemein"
 

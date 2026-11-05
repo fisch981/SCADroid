@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.18] - 2026-11-05
+
+### Geändert / Hinzugefügt
+- Behebt den SyntaxError (import.meta.url) beim Laden von openscad.js im Android WebView, aktiviert das schnelle Manifold-Backend (--backend=Manifold) sowie Binaer-STL-Transfer (--export-format=binstl), integriert LiberationSans-Schriftarten inkl. Fontconfig fuer text(), verhindert den Absturz bei Mehrfach-Renders durch gecachtes WebAssembly.Module und entfernt den fehlerhaften internen Fallback-Renderer vollstaendig.
+
 ## [0.1.17] - 2026-11-05
 
 ### Geändert / Hinzugefügt

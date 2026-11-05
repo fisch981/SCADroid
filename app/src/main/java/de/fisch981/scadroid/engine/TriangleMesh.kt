@@ -74,6 +74,106 @@ class TriangleMesh(
     companion object {
         val EMPTY = fromSolid(CsgSolid(emptyList()))
 
+        fun fromBinaryStl(bytes: ByteArray, color: Vector3 = Vector3(0.97f, 0.74f, 0.22f)): TriangleMesh {
+            if (bytes.size < 84) return EMPTY
+            val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+            val headerTriCount = buf.getInt(80)
+            val maxPossibleTris = (bytes.size - 84) / 50
+            val triCount = if (headerTriCount in 1..maxPossibleTris) headerTriCount else maxPossibleTris
+            if (triCount <= 0) return EMPTY
+
+            val totalVertices = triCount * 3
+            val vBuf = ByteBuffer.allocateDirect(totalVertices * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            val nBuf = ByteBuffer.allocateDirect(totalVertices * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            val cBuf = ByteBuffer.allocateDirect(totalVertices * 4 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+
+            var minX = Float.MAX_VALUE
+            var minY = Float.MAX_VALUE
+            var minZ = Float.MAX_VALUE
+            var maxX = -Float.MAX_VALUE
+            var maxY = -Float.MAX_VALUE
+            var maxZ = -Float.MAX_VALUE
+
+            var offset = 84
+            for (i in 0 until triCount) {
+                var nx = buf.getFloat(offset)
+                var ny = buf.getFloat(offset + 4)
+                var nz = buf.getFloat(offset + 8)
+
+                val x0 = buf.getFloat(offset + 12)
+                val y0 = buf.getFloat(offset + 16)
+                val z0 = buf.getFloat(offset + 20)
+
+                val x1 = buf.getFloat(offset + 24)
+                val y1 = buf.getFloat(offset + 28)
+                val z1 = buf.getFloat(offset + 32)
+
+                val x2 = buf.getFloat(offset + 36)
+                val y2 = buf.getFloat(offset + 40)
+                val z2 = buf.getFloat(offset + 44)
+
+                if (nx * nx + ny * ny + nz * nz < 1e-6f) {
+                    val ux = x1 - x0
+                    val uy = y1 - y0
+                    val uz = z1 - z0
+                    val vx = x2 - x0
+                    val vy = y2 - y0
+                    val vz = z2 - z0
+                    val cx = uy * vz - uz * vy
+                    val cy = uz * vx - ux * vz
+                    val cz = ux * vy - uy * vx
+                    val len = kotlin.math.sqrt(cx * cx + cy * cy + cz * cz)
+                    if (len > 1e-8f) {
+                        nx = cx / len
+                        ny = cy / len
+                        nz = cz / len
+                    } else {
+                        nx = 0f; ny = 0f; nz = 1f
+                    }
+                }
+
+                // Vertex 0
+                vBuf.put(x0); vBuf.put(y0); vBuf.put(z0)
+                nBuf.put(nx); nBuf.put(ny); nBuf.put(nz)
+                cBuf.put(color.x); cBuf.put(color.y); cBuf.put(color.z); cBuf.put(1.0f)
+                if (x0 < minX) minX = x0; if (x0 > maxX) maxX = x0
+                if (y0 < minY) minY = y0; if (y0 > maxY) maxY = y0
+                if (z0 < minZ) minZ = z0; if (z0 > maxZ) maxZ = z0
+
+                // Vertex 1
+                vBuf.put(x1); vBuf.put(y1); vBuf.put(z1)
+                nBuf.put(nx); nBuf.put(ny); nBuf.put(nz)
+                cBuf.put(color.x); cBuf.put(color.y); cBuf.put(color.z); cBuf.put(1.0f)
+                if (x1 < minX) minX = x1; if (x1 > maxX) maxX = x1
+                if (y1 < minY) minY = y1; if (y1 > maxY) maxY = y1
+                if (z1 < minZ) minZ = z1; if (z1 > maxZ) maxZ = z1
+
+                // Vertex 2
+                vBuf.put(x2); vBuf.put(y2); vBuf.put(z2)
+                nBuf.put(nx); nBuf.put(ny); nBuf.put(nz)
+                cBuf.put(color.x); cBuf.put(color.y); cBuf.put(color.z); cBuf.put(1.0f)
+                if (x2 < minX) minX = x2; if (x2 > maxX) maxX = x2
+                if (y2 < minY) minY = y2; if (y2 > maxY) maxY = y2
+                if (z2 < minZ) minZ = z2; if (z2 > maxZ) maxZ = z2
+
+                offset += 50
+            }
+
+            vBuf.position(0)
+            nBuf.position(0)
+            cBuf.position(0)
+
+            return TriangleMesh(
+                vertexBuffer = vBuf,
+                normalBuffer = nBuf,
+                colorBuffer = cBuf,
+                vertexCount = totalVertices,
+                triangleCount = triCount,
+                minBound = Vector3(minX, minY, minZ),
+                maxBound = Vector3(maxX, maxY, maxZ)
+            )
+        }
+
         fun fromStlString(stl: String, color: Vector3 = Vector3(0.97f, 0.74f, 0.22f)): TriangleMesh {
             val lines = stl.lineSequence()
             val vertices = ArrayList<Vector3>(10000)

@@ -24,7 +24,13 @@ import java.util.Locale
 class ProjectViewModel(application: Application) : AndroidViewModel(application) {
 
     private val parser = ScadParser()
-    private val wasmEngine by lazy { de.fisch981.scadroid.engine.OpenScadWasmEngine(application) }
+    private val wasmEngine by lazy {
+        de.fisch981.scadroid.engine.OpenScadWasmEngine(application) { msg ->
+            viewModelScope.launch(Dispatchers.Main) {
+                appendLog("[OpenSCAD] $msg")
+            }
+        }
+    }
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     private val prefs = application.getSharedPreferences("scadroid_prefs", android.content.Context.MODE_PRIVATE)
     private val projectFile = File(application.filesDir, "current_project.scad")
@@ -111,8 +117,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         _code.value = newCode
         saveCodeInternal(newCode)
         viewModelScope.launch(Dispatchers.Default) {
-            val parseRes = parser.parseAndEvaluate(newCode, paramOverrides)
-            _customizerParams.value = parseRes.parameters
+            _customizerParams.value = parser.extractParameters(newCode)
         }
     }
 
@@ -157,9 +162,20 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     fun loadFromUri(uri: Uri, contentResolver: ContentResolver) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "modell.scad"
+                if (fileName.endsWith(".stl", ignoreCase = true)) {
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+                    val destFile = File(getApplication<Application>().filesDir, fileName)
+                    destFile.writeBytes(bytes)
+                    withContext(Dispatchers.Main) {
+                        appendLog("STL-Datei '$fileName' (${bytes.size} Bytes) für import(\"$fileName\") im Projektverzeichnis bereitgestellt.")
+                        _statusMessage.value = "'$fileName' für import() bereitgestellt"
+                        evaluateInternal()
+                    }
+                    return@launch
+                }
                 val inputStream = contentResolver.openInputStream(uri)
                 val loadedCode = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
-                val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "modell.scad"
                 withContext(Dispatchers.Main) {
                     _code.value = loadedCode
                     _currentFileName.value = fileName
@@ -254,16 +270,16 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     private fun evaluateInternal() {
         viewModelScope.launch {
             _renderState.value = RenderState.Evaluating(0.2f, "Berechne 3D-Modell (OpenSCAD Core)...")
-            appendLog("Starte 3D-Berechnung mit offiziellem OpenSCAD-Kern...")
+            appendLog("Starte 1:1 3D-Berechnung (OpenSCAD C++ / Manifold-Kern)...")
 
             val startTime = System.currentTimeMillis()
 
             try {
                 val currentCode = _code.value
-                val parseResult = withContext(Dispatchers.Default) {
-                    parser.parseAndEvaluate(currentCode, paramOverrides)
+                val params = withContext(Dispatchers.Default) {
+                    parser.extractParameters(currentCode)
                 }
-                _customizerParams.value = parseResult.parameters
+                _customizerParams.value = params
 
                 // Ersetze geänderte Customizer-Parameter im Code
                 var codeToRender = currentCode
@@ -272,26 +288,15 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                     codeToRender = codeToRender.replace(regex, "$k = $v;")
                 }
 
-                // Führe Berechnung mit echtem OpenSCAD WASM-Kern aus
-                var wasmSuccess = false
-                val stlString = try {
-                    val res = wasmEngine.render(codeToRender)
-                    wasmSuccess = true
-                    res
-                } catch (e: Exception) {
-                    appendLog("WASM-Engine Fehler/Hinweis: ${e.message}")
-                    null
-                }
+                // Führe Berechnung ausschließlich mit dem echten OpenSCAD WASM-Kern aus (1:1 Desktop-Parität)
+                val stlBytes = wasmEngine.renderBinaryStl(codeToRender)
 
-                val mesh = if (!stlString.isNullOrBlank()) {
+                val mesh = if (stlBytes.isNotEmpty()) {
                     withContext(Dispatchers.Default) {
-                        TriangleMesh.fromStlString(stlString)
+                        TriangleMesh.fromBinaryStl(stlBytes)
                     }
                 } else {
-                    appendLog("WASM fehlgeschlagen - verwende internen Parser als Fallback...")
-                    withContext(Dispatchers.Default) {
-                        TriangleMesh.fromSolid(parseResult.solid)
-                    }
+                    TriangleMesh.EMPTY
                 }
 
                 val duration = System.currentTimeMillis() - startTime
@@ -303,10 +308,9 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                     isFullRender = true
                 )
 
-                val engineInfo = if (wasmSuccess) "Offizieller OpenSCAD Kern" else "Interner Fallback-Parser"
-                appendLog("Modell fertiggestellt ($engineInfo): ${mesh.triangleCount} Dreiecke (${mesh.vertexCount} Vertices) in ${duration} ms.")
+                appendLog("Modell fertiggestellt (Offizieller OpenSCAD Kern): ${mesh.triangleCount} Dreiecke (${mesh.vertexCount} Vertices) in ${duration} ms.")
             } catch (e: Throwable) {
-                _renderState.value = RenderState.Error("Fehler bei Geometrieberechnung: ${e.message}")
+                _renderState.value = RenderState.Error("Fehler bei OpenSCAD-Berechnung: ${e.message}")
                 appendLog("FEHLER: ${e.message}")
             }
         }

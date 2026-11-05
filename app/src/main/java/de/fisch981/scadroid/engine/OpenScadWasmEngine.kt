@@ -14,13 +14,20 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import java.lang.StringBuilder
 
-class OpenScadWasmEngine(private val context: Context) {
+class OpenScadWasmEngine(
+    private val context: Context,
+    var onConsoleLog: ((String) -> Unit)? = null
+) {
 
     private val tag = "OpenScadWasm"
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val renderMutex = Mutex()
     private var webView: WebView? = null
     var isReady = false
         private set
@@ -28,6 +35,7 @@ class OpenScadWasmEngine(private val context: Context) {
     private val readyDeferred = CompletableDeferred<Boolean>()
     private var currentDeferred: CompletableDeferred<String>? = null
     private val chunkBuffer = StringBuilder()
+    private var cachedFontBase64: String? = null
     var lastError: String? = null
         private set
 
@@ -52,7 +60,14 @@ class OpenScadWasmEngine(private val context: Context) {
 
             wv.webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-                    Log.d(tag, "[JS] ${consoleMessage?.messageLevel()}: ${consoleMessage?.message()} (${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()})")
+                    val msg = consoleMessage?.message() ?: ""
+                    Log.d(tag, "[JS] ${consoleMessage?.messageLevel()}: $msg (${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()})")
+                    if (consoleMessage?.messageLevel() == ConsoleMessage.MessageLevel.ERROR && !isReady) {
+                        lastError = "JS Error: $msg (Zeile ${consoleMessage.lineNumber()})"
+                        if (!readyDeferred.isCompleted) {
+                            readyDeferred.complete(false)
+                        }
+                    }
                     return true
                 }
             }
@@ -73,12 +88,21 @@ class OpenScadWasmEngine(private val context: Context) {
             val msg = "WebView Init Exception: ${e.message}"
             Log.e(tag, msg, e)
             lastError = msg
-            readyDeferred.complete(false)
+            if (!readyDeferred.isCompleted) {
+                readyDeferred.complete(false)
+            }
         }
     }
 
-    suspend fun render(scadCode: String, timeoutMs: Long = 180000): String {
-        // Warte bis die WASM-Engine betriebsbereit ist
+    suspend fun renderBinaryStl(scadCode: String, timeoutMs: Long = 180000): ByteArray {
+        val b64 = render(scadCode, timeoutMs)
+        if (b64.isBlank()) {
+            return ByteArray(0)
+        }
+        return Base64.decode(b64, Base64.DEFAULT)
+    }
+
+    suspend fun render(scadCode: String, timeoutMs: Long = 180000): String = renderMutex.withLock {
         if (!isReady) {
             val ready = withTimeoutOrNull(25000) {
                 readyDeferred.await()
@@ -105,7 +129,7 @@ class OpenScadWasmEngine(private val context: Context) {
             deferred.await()
         } ?: throw RuntimeException("Zeitüberschreitung bei der OpenSCAD-Berechnung ($timeoutMs ms)")
 
-        return result
+        result
     }
 
     private inner class JsBridge {
@@ -113,7 +137,58 @@ class OpenScadWasmEngine(private val context: Context) {
         fun onEngineReady() {
             Log.i(tag, "OpenSCAD WASM Engine ist bereit.")
             isReady = true
-            readyDeferred.complete(true)
+            if (!readyDeferred.isCompleted) {
+                readyDeferred.complete(true)
+            }
+        }
+
+        @JavascriptInterface
+        fun onConsoleLog(msg: String) {
+            onConsoleLog?.invoke(msg)
+        }
+
+        @JavascriptInterface
+        fun getFontBase64(): String {
+            cachedFontBase64?.let { return it }
+            return try {
+                val bytes = context.assets.open("openscad/LiberationSans-Regular.ttf").use { it.readBytes() }
+                val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                cachedFontBase64 = b64
+                b64
+            } catch (e: Exception) {
+                Log.w(tag, "Standard-Schriftart konnte nicht aus Assets geladen werden, versuche System-Font: ${e.message}")
+                try {
+                    val sysFont = File("/system/fonts/Roboto-Regular.ttf")
+                    if (sysFont.exists()) {
+                        val b64 = Base64.encodeToString(sysFont.readBytes(), Base64.NO_WRAP)
+                        cachedFontBase64 = b64
+                        b64
+                    } else ""
+                } catch (_: Exception) {
+                    ""
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun getProjectFileBase64(fileName: String): String {
+            return try {
+                val cleanName = fileName.substringAfterLast('/').substringAfterLast('\\')
+                val direct = File(context.filesDir, cleanName)
+                val target = if (direct.exists()) {
+                    direct
+                } else {
+                    context.filesDir.listFiles()?.firstOrNull { it.name.equals(cleanName, ignoreCase = true) }
+                }
+                if (target != null && target.exists() && target.isFile) {
+                    Base64.encodeToString(target.readBytes(), Base64.NO_WRAP)
+                } else {
+                    ""
+                }
+            } catch (e: Exception) {
+                Log.w(tag, "Fehler beim Laden der Projektdatei '$fileName': ${e.message}")
+                ""
+            }
         }
 
         @JavascriptInterface
@@ -144,6 +219,9 @@ class OpenScadWasmEngine(private val context: Context) {
         fun onError(errorMsg: String) {
             Log.e(tag, "OpenSCAD Engine Fehler: $errorMsg")
             lastError = errorMsg
+            if (!isReady && !readyDeferred.isCompleted) {
+                readyDeferred.complete(false)
+            }
             currentDeferred?.completeExceptionally(RuntimeException(errorMsg))
             currentDeferred = null
         }
