@@ -347,4 +347,84 @@ class CsgEngineTest {
         println("ESP32 Case mesh triangles: ${mesh.triangleCount}, min=${mesh.minBound}, max=${mesh.maxBound}")
         assertTrue("ESP32 Case should produce valid geometry (triangles > 50, got ${mesh.triangleCount})", mesh.triangleCount > 50)
     }
+
+    @Test
+    fun testUserSlowScript() {
+        val fullScript = """
+            ${'$'}fn=32;
+            difference()
+            {
+                minkowski()
+                {
+                    cube([43.5, 27.5,67]);
+                    sphere(3);
+                }
+                translate([-3,-3,67]) cube([49.5,33.5,3]);
+                cube([43.5, 27.5,67]);
+            }
+            difference()
+            {
+                translate([-1,-1,67]) cube([45.5, 29.5,5]);
+                translate([0,0,67]) cube([43.5, 27.5,5]);
+            }
+            translate([8.6,-5.6,67]) scharnier(8.5);
+            translate([8.7+8.7+8.6,-5.6,67]) scharnier(8.5);
+            translate([8.7+8.7+8.7+8.7+8.6,-5.6,67]) scharnier(8.5);
+
+            translate([0,70,5]) rotate([180,0,0])
+            {
+                difference()
+                {
+                    minkowski()
+                    {
+                        cube([43.5, 27.5,5]);
+                        sphere(3);
+                    }
+                    translate([-3,-3,-3]) cube([49.5,33.5,3]);
+                    translate([-1,-1,0]) cube([45.5, 29.5,5]);
+                }
+                translate([8.8,-5.6,-0.1]) rotate([0,180,0]) scharnier(8.5);
+                translate([8.8+8.7+8.7,-5.6,-0.1]) rotate([0,180,0]) scharnier(8.5);
+                hull()
+                {
+                    translate([17,30.5,3]) sphere(1.5);
+                    translate([26.5,30.5,3]) sphere(1.5);
+                }
+            }
+
+            difference()
+            {
+                translate([26.75,-3,50]) rotate([90,0,-90]) linear_extrude(10) polygon(points=[[0,0],[5,3],[5,6],[0,6]]);
+                translate([26.75,-5,53.7]) rotate([90,0,-90]) cylinder(h=10, d=2);
+            }
+
+            translate([53,8,40]) difference()
+            {
+                cylinder(h=25, d1=16, d2=16);
+                cylinder(h=25, d1=12, d2=12);
+                translate([-9,-10,-2]) rotate([0,45,0]) cube([25,25,25]);
+            }
+
+            module scharnier(e)
+            {
+                rotate([90,0,-90]) linear_extrude(e) difference()
+                {
+                    hull()
+                    {
+                        circle(d=5);
+                        polygon(points=[[-2.7,0],[2.5,0],[-2.7,-5]]);
+                    }
+                    circle(d=2);
+                }
+            }
+        """.trimIndent()
+
+        val parser = ScadParser()
+        val t0 = System.currentTimeMillis()
+        val result = parser.parseAndEvaluate(fullScript)
+        val dt = System.currentTimeMillis() - t0
+        println("Full user script evaluated in ${'$'}dt ms, total polygons: ${'$'}{result.solid.polygons.size}")
+        assertTrue("Should evaluate in under 5 seconds (got ${'$'}dt ms)", dt < 5000)
+        assertTrue("Polygons should be valid (> 50, got ${'$'}{result.solid.polygons.size})", result.solid.polygons.size > 50)
+    }
 }

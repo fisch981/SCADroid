@@ -749,40 +749,38 @@ class ScadParser {
                 val children = parseStatement(scopeVars, scopeStrings)
                 if (children.isEmpty()) return emptyList()
 
-                var combined = children[0]
-                for (i in 1 until children.size) combined = combined.union(children[i])
-
-                val transformed = when (transName) {
-                    "translate" -> {
-                        val vecStr = args["v"] ?: args["arg0"] ?: "[0,0,0]"
-                        combined.translate(parseVector(vecStr))
-                    }
-                    "rotate" -> {
-                        val vecStr = args["a"] ?: args["arg0"] ?: "[0,0,0]"
-                        if (vecStr.startsWith("[")) {
-                            val v = parseVector(vecStr)
-                            combined.rotate(v.x, v.y, v.z)
-                        } else {
-                            val a = mathEval.eval(vecStr).toFloat()
-                            val v = if (args.containsKey("v")) parseVector(args["v"]!!) else Vector3.UNIT_Z
-                            combined.rotate(v.x * a, v.y * a, v.z * a)
+                return children.map { child ->
+                    when (transName) {
+                        "translate" -> {
+                            val vecStr = args["v"] ?: args["arg0"] ?: "[0,0,0]"
+                            child.translate(parseVector(vecStr))
                         }
+                        "rotate" -> {
+                            val vecStr = args["a"] ?: args["arg0"] ?: "[0,0,0]"
+                            if (vecStr.startsWith("[")) {
+                                val v = parseVector(vecStr)
+                                child.rotate(v.x, v.y, v.z)
+                            } else {
+                                val a = mathEval.eval(vecStr).toFloat()
+                                val v = if (args.containsKey("v")) parseVector(args["v"]!!) else Vector3.UNIT_Z
+                                child.rotate(v.x * a, v.y * a, v.z * a)
+                            }
+                        }
+                        "scale" -> {
+                            val vecStr = args["v"] ?: args["arg0"] ?: "[1,1,1]"
+                            child.scale(parseVector(vecStr))
+                        }
+                        "mirror" -> {
+                            val vecStr = args["v"] ?: args["arg0"] ?: "[1,0,0]"
+                            child.mirror(parseVector(vecStr))
+                        }
+                        "color" -> {
+                            val cStr = args["c"] ?: args["arg0"] ?: "gold"
+                            child.setColor(parseColor(cStr))
+                        }
+                        else -> child
                     }
-                    "scale" -> {
-                        val vecStr = args["v"] ?: args["arg0"] ?: "[1,1,1]"
-                        combined.scale(parseVector(vecStr))
-                    }
-                    "mirror" -> {
-                        val vecStr = args["v"] ?: args["arg0"] ?: "[1,0,0]"
-                        combined.mirror(parseVector(vecStr))
-                    }
-                    "color" -> {
-                        val cStr = args["c"] ?: args["arg0"] ?: "gold"
-                        combined.setColor(parseColor(cStr))
-                    }
-                    else -> combined
                 }
-                return listOf(transformed)
             }
 
             // 6. Extrusionen: linear_extrude(...)
@@ -795,11 +793,10 @@ class ScadParser {
                 val children = parseStatement(scopeVars, scopeStrings)
                 if (children.isEmpty()) return emptyList()
 
-                var combined = children[0]
-                for (i in 1 until children.size) combined = combined.union(children[i])
-
-                val finalSolid = combined.scale(Vector3(1f, 1f, h))
-                return if (center) listOf(finalSolid.translate(Vector3(0f, 0f, -h / 2f))) else listOf(finalSolid)
+                return children.map { child ->
+                    val finalSolid = child.scale(Vector3(1f, 1f, h))
+                    if (center) finalSolid.translate(Vector3(0f, 0f, -h / 2f)) else finalSolid
+                }
             }
 
             // 7. Primitives: cube(...); cylinder(...); sphere(...); square(...); circle(...);
@@ -888,6 +885,21 @@ class ScadParser {
                 return listOf(CsgSolid.cylinder(1f, r, r, fn, center = false))
             }
 
+            if (t.matches(Regex("(?s)^polygon\\s*\\(.*\\)$"))) {
+                val argContent = t.substringAfter("(").substringBeforeLast(")")
+                val args = parseArguments(argContent)
+                val pointsStr = args["points"] ?: args["arg0"] ?: "[]"
+                val pts = mutableListOf<Vector3>()
+                val ptRegex = Regex("\\[\\s*([^,\\]]+)\\s*,\\s*([^\\]]+)\\s*\\]")
+                for (m in ptRegex.findAll(pointsStr)) {
+                    val x = mathEval.eval(m.groupValues[1]).toFloat()
+                    val y = mathEval.eval(m.groupValues[2]).toFloat()
+                    pts.add(Vector3(x, y, 0f))
+                }
+                if (peek() == ";") next()
+                return listOf(CsgSolid.polygon2d(pts))
+            }
+
             // 8. Aufruf eines benutzerdefinierten Moduls
             val modCallName = t.substringBefore("(").trim()
             if (userModules.containsKey(modCallName)) {
@@ -945,6 +957,53 @@ class ScadParser {
             return emptyList()
         }
 
+        // Vorab-Scan: Registriere alle Module, damit sie aufgerufen werden können,
+        // selbst wenn sie am Ende der Datei definiert sind (Standard in OpenSCAD)
+        var prePos = 0
+        while (prePos < tokens.size) {
+            val tok = tokens[prePos]
+            if (tok == "module" || tok.startsWith("module ")) {
+                val header = if (tok == "module") {
+                    prePos++
+                    if (prePos < tokens.size) tokens[prePos] else ""
+                } else tok.removePrefix("module").trim()
+                val modName = header.substringBefore("(").trim()
+                val paramStr = header.substringAfter("(", "").substringBeforeLast(")", "")
+                val argDefs = splitArgs(paramStr)
+                val paramNames = mutableListOf<String>()
+                val defaultValues = mutableMapOf<String, String>()
+                for (arg in argDefs) {
+                    val trimmed = arg.trim()
+                    if (trimmed.isEmpty()) continue
+                    if (trimmed.contains("=")) {
+                        val p = trimmed.split("=", limit = 2)
+                        val pName = p[0].trim()
+                        paramNames.add(pName)
+                        defaultValues[pName] = p[1].trim()
+                    } else {
+                        paramNames.add(trimmed)
+                    }
+                }
+                prePos++
+                val bodyTokens = mutableListOf<String>()
+                if (prePos < tokens.size && tokens[prePos] == "{") {
+                    bodyTokens.add(tokens[prePos])
+                    prePos++
+                    var depth = 1
+                    while (prePos < tokens.size && depth > 0) {
+                        val bTok = tokens[prePos]
+                        if (bTok == "{") depth++
+                        else if (bTok == "}") depth--
+                        bodyTokens.add(bTok)
+                        prePos++
+                    }
+                }
+                userModules[modName] = UserModule(paramNames, defaultValues, bodyTokens)
+            } else {
+                prePos++
+            }
+        }
+
         val allSolids = mutableListOf<CsgSolid>()
         val topVars = HashMap(variables)
         val topStrings = HashMap(stringVariables)
@@ -955,9 +1014,9 @@ class ScadParser {
         val finalSolid = if (allSolids.isEmpty()) {
             CsgSolid(emptyList())
         } else {
-            var combined = allSolids[0]
-            for (i in 1 until allSolids.size) combined = combined.union(allSolids[i])
-            combined
+            val allPolys = ArrayList<CsgPolygon>()
+            for (s in allSolids) allPolys.addAll(s.polygons)
+            CsgSolid(allPolys)
         }
 
         logs.add("OpenSCAD Modell erfolgreich berechnet: ${finalSolid.polygons.size} Polygone.")

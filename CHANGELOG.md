@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.15] - 2026-11-05
+
+### Geändert / Hinzugefügt
+- CSG Performance & Polygon Explosion behoben: Schnelle Auswertung in <1s, korrekte Wandgeometrie ohne Schnitte, Bounding-Box Vorab-Checks und polygon()-Support
+
 ## [0.1.14] - 2026-11-04
 
 ### Geändert / Hinzugefügt

@@ -121,7 +121,8 @@ class CsgNode(polygons: List<CsgPolygon>? = null) {
         back?.invert()
     }
 
-    fun clipPolygons(list: List<CsgPolygon>): List<CsgPolygon> {
+    fun clipPolygons(list: List<CsgPolygon>, depth: Int = 0): List<CsgPolygon> {
+        if (depth > 25) return list
         val p = plane ?: return list.toList()
         var f = mutableListOf<CsgPolygon>()
         var b = mutableListOf<CsgPolygon>()
@@ -130,8 +131,8 @@ class CsgNode(polygons: List<CsgPolygon>? = null) {
             p.splitPolygon(poly, f, b, f, b)
         }
 
-        f = (front?.clipPolygons(f) ?: f).toMutableList()
-        b = (back?.clipPolygons(b) ?: mutableListOf()).toMutableList()
+        f = (front?.clipPolygons(f, depth + 1) ?: f).toMutableList()
+        b = (back?.clipPolygons(b, depth + 1) ?: mutableListOf()).toMutableList()
 
         f.addAll(b)
         return f
@@ -179,11 +180,58 @@ class CsgNode(polygons: List<CsgPolygon>? = null) {
 }
 
 /**
+ * BoundingBox für schnelle Kollisions- und Intersections-Prüfungen vor aufwändigen BSP-Operationen
+ */
+data class BoundingBox(
+    val min: Vector3,
+    val max: Vector3
+) {
+    fun intersects(other: BoundingBox, margin: Float = 1e-3f): Boolean {
+        return (min.x - margin <= other.max.x && max.x + margin >= other.min.x) &&
+               (min.y - margin <= other.max.y && max.y + margin >= other.min.y) &&
+               (min.z - margin <= other.max.z && max.z + margin >= other.min.z)
+    }
+
+    companion object {
+        fun fromPolygons(polygons: List<CsgPolygon>): BoundingBox {
+            if (polygons.isEmpty()) {
+                return BoundingBox(Vector3.ZERO, Vector3.ZERO)
+            }
+            var minX = Float.POSITIVE_INFINITY
+            var minY = Float.POSITIVE_INFINITY
+            var minZ = Float.POSITIVE_INFINITY
+            var maxX = Float.NEGATIVE_INFINITY
+            var maxY = Float.NEGATIVE_INFINITY
+            var maxZ = Float.NEGATIVE_INFINITY
+
+            for (p in polygons) {
+                for (v in p.vertices) {
+                    if (v.x < minX) minX = v.x
+                    if (v.y < minY) minY = v.y
+                    if (v.z < minZ) minZ = v.z
+                    if (v.x > maxX) maxX = v.x
+                    if (v.y > maxY) maxY = v.y
+                    if (v.z > maxZ) maxZ = v.z
+                }
+            }
+            return BoundingBox(Vector3(minX, minY, minZ), Vector3(maxX, maxY, maxZ))
+        }
+    }
+}
+
+/**
  * CSG Solid - Repräsentiert einen 3D-Körper und bietet union, difference, intersection
  */
 class CsgSolid(val polygons: List<CsgPolygon>) {
 
+    val bounds: BoundingBox by lazy { BoundingBox.fromPolygons(polygons) }
+
     fun union(other: CsgSolid): CsgSolid {
+        if (polygons.isEmpty()) return other
+        if (other.polygons.isEmpty()) return this
+        if (!bounds.intersects(other.bounds)) {
+            return CsgSolid(polygons + other.polygons)
+        }
         val a = CsgNode(polygons)
         val b = CsgNode(other.polygons)
         a.clipTo(b)
@@ -196,6 +244,11 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
     }
 
     fun difference(other: CsgSolid): CsgSolid {
+        if (polygons.isEmpty()) return this
+        if (other.polygons.isEmpty()) return this
+        if (!bounds.intersects(other.bounds)) {
+            return this
+        }
         val a = CsgNode(polygons)
         val b = CsgNode(other.polygons)
         a.invert()
@@ -210,6 +263,10 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
     }
 
     fun intersection(other: CsgSolid): CsgSolid {
+        if (polygons.isEmpty() || other.polygons.isEmpty()) return CsgSolid(emptyList())
+        if (!bounds.intersects(other.bounds)) {
+            return CsgSolid(emptyList())
+        }
         val a = CsgNode(polygons)
         val b = CsgNode(other.polygons)
         a.invert()
@@ -317,7 +374,7 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
             val bottomVerts = mutableListOf<Vector3>()
             val topVerts = mutableListOf<Vector3>()
 
-            val seg = segments.coerceIn(3, 128)
+            val seg = segments.coerceIn(3, 36)
             for (i in 0 until seg) {
                 val theta = (i.toDouble() / seg * 2.0 * Math.PI).toFloat()
                 val nextTheta = (((i + 1) % seg).toDouble() / seg * 2.0 * Math.PI).toFloat()
@@ -362,6 +419,51 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
             }
 
             return CsgSolid(polys)
+        }
+
+        fun polygonPrism(
+            points: List<Vector3>,
+            height: Float = 1f,
+            color: Vector3 = Vector3(0.97f, 0.74f, 0.22f)
+        ): CsgSolid {
+            if (points.size < 3) return CsgSolid(emptyList())
+            val n = points.size
+
+            // Prüfe Orientierung in 2D (XY)
+            var area = 0.0
+            for (i in 0 until n) {
+                val p0 = points[i]
+                val p1 = points[(i + 1) % n]
+                area += (p0.x * p1.y - p1.x * p0.y)
+            }
+            val pts = if (area < 0) points.asReversed() else points
+            val polys = mutableListOf<CsgPolygon>()
+
+            // Boden: Normale nach unten (-Z) -> invertierte Punktreihenfolge
+            val bottomVerts = pts.asReversed().map { Vector3(it.x, it.y, 0f) }
+            polys.add(CsgPolygon(bottomVerts, color = color))
+
+            // Deckel: Normale nach oben (+Z) -> Punktreihenfolge beibehalten
+            val topVerts = pts.map { Vector3(it.x, it.y, height) }
+            polys.add(CsgPolygon(topVerts, color = color))
+
+            // Seitenwände: Quad für jede Kante
+            for (i in 0 until n) {
+                val p0 = pts[i]
+                val p1 = pts[(i + 1) % n]
+                val side = listOf(
+                    Vector3(p0.x, p0.y, 0f),
+                    Vector3(p1.x, p1.y, 0f),
+                    Vector3(p1.x, p1.y, height),
+                    Vector3(p0.x, p0.y, height)
+                )
+                polys.add(CsgPolygon(side, color = color))
+            }
+            return CsgSolid(polys)
+        }
+
+        fun polygon2d(points: List<Vector3>, color: Vector3 = Vector3(0.97f, 0.74f, 0.22f)): CsgSolid {
+            return polygonPrism(points, 1f, color)
         }
 
         fun sphere(
@@ -448,19 +550,36 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
             }
             if (unique.size < 4) return CsgSolid(emptyList())
 
-            val p0 = unique.minByOrNull { it.x }!!
-            val p1 = unique.maxByOrNull { (it - p0).lengthSquared() }!!
+            val sampledUnique = if (unique.size > 48) {
+                val extremes = LinkedHashSet<Vector3>()
+                extremes.add(unique.minByOrNull { it.x }!!)
+                extremes.add(unique.maxByOrNull { it.x }!!)
+                extremes.add(unique.minByOrNull { it.y }!!)
+                extremes.add(unique.maxByOrNull { it.y }!!)
+                extremes.add(unique.minByOrNull { it.z }!!)
+                extremes.add(unique.maxByOrNull { it.z }!!)
+                val step = (unique.size / 32).coerceAtLeast(1)
+                for (i in unique.indices step step) {
+                    extremes.add(unique[i])
+                }
+                extremes.toList()
+            } else {
+                unique
+            }
+
+            val p0 = sampledUnique.minByOrNull { it.x }!!
+            val p1 = sampledUnique.maxByOrNull { (it - p0).lengthSquared() }!!
             val lineDir = (p1 - p0).normalized()
-            val p2 = unique.maxByOrNull { p ->
+            val p2 = sampledUnique.maxByOrNull { p ->
                 val v = p - p0
                 (v - lineDir * v.dot(lineDir)).lengthSquared()
             }!!
             val normal0 = (p1 - p0).cross(p2 - p0).normalized()
-            val p3 = unique.maxByOrNull { abs((it - p0).dot(normal0)) }!!
+            val p3 = sampledUnique.maxByOrNull { abs((it - p0).dot(normal0)) }!!
 
             val distP3 = abs((p3 - p0).dot(normal0))
             if (distP3 < 1e-4f) {
-                return makeCoplanarHull(unique, color)
+                return makeCoplanarHull(sampledUnique, color)
             }
 
             data class Tri(val a: Vector3, val b: Vector3, val c: Vector3) {
@@ -488,7 +607,7 @@ class CsgSolid(val polygons: List<CsgPolygon>) {
 
             data class UnorderedEdge(val u: Vector3, val v: Vector3)
 
-            for (p in unique) {
+            for (p in sampledUnique) {
                 if (p == p0 || p == p1 || p == p2 || p == p3) continue
 
                 val visible = faces.filter { it.canSee(p) }
