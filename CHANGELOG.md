@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.19] - 2026-11-05
+
+### Geändert / Hinzugefügt
+- Behebt das Zurueckspringen der Schieberegler in der Parameter-Ansicht (Customizer): Parameter-Overrides und Min/Max-Grenzen bleiben beim Neuberechnen erhalten, Slider-Aenderungen werden entprellt (300 ms Debounce) und direkt in den SCAD-Code uebernommen.
+
 ## [0.1.18] - 2026-11-05
 
 ### Geändert / Hinzugefügt

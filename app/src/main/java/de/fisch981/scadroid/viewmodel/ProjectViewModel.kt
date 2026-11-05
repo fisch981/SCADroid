@@ -11,6 +11,8 @@ import de.fisch981.scadroid.model.CustomizerParam
 import de.fisch981.scadroid.model.RenderState
 import de.fisch981.scadroid.nativebridge.OpenSCADEngine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +77,8 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     val customizerParams: StateFlow<List<CustomizerParam>> = _customizerParams.asStateFlow()
 
     private val paramOverrides = mutableMapOf<String, Any>()
+    private val paramBoundsCache = mutableMapOf<String, Pair<Double, Double>>()
+    private var paramRenderJob: Job? = null
 
     private val _logOutput = MutableStateFlow("[${timeFormat.format(Date())}] SCADroid IDE initialisiert.\n[${timeFormat.format(Date())}] Berechne 3D-Initialmodell...")
     val logOutput: StateFlow<String> = _logOutput.asStateFlow()
@@ -113,11 +117,69 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun extractParametersWithOverrides(code: String): List<CustomizerParam> {
+        val rawParams = parser.extractParameters(code)
+        return rawParams.map { p ->
+            when (p) {
+                is CustomizerParam.NumberParam -> {
+                    val bounds = paramBoundsCache.getOrPut(p.name) {
+                        (p.min ?: 0.0) to (p.max ?: 100.0)
+                    }
+                    val overrideVal = (paramOverrides[p.name] as? Number)?.toDouble() ?: p.value
+                    p.copy(value = overrideVal, min = bounds.first, max = bounds.second)
+                }
+                is CustomizerParam.BooleanParam -> {
+                    val overrideVal = (paramOverrides[p.name] as? Boolean) ?: p.value
+                    p.copy(value = overrideVal)
+                }
+                is CustomizerParam.StringParam -> {
+                    val overrideVal = (paramOverrides[p.name] as? String) ?: p.value
+                    p.copy(value = overrideVal)
+                }
+            }
+        }
+    }
+
+    private fun formatScadParamValue(v: Any): String {
+        return when (v) {
+            is Double -> if (v % 1.0 == 0.0) "${v.toInt()}" else String.format(Locale.US, "%.2f", v).trimEnd('0').trimEnd('.')
+            is Float -> if (v % 1f == 0f) "${v.toInt()}" else String.format(Locale.US, "%.2f", v).trimEnd('0').trimEnd('.')
+            is String -> "\"$v\""
+            else -> v.toString()
+        }
+    }
+
+    private fun applyParamOverridesToCode(baseCode: String): String {
+        var result = baseCode
+        for ((k, v) in paramOverrides) {
+            val formatted = formatScadParamValue(v)
+            val lineRegex = Regex("(?m)^(\\s*${Regex.escape(k)}\\s*=\\s*)([^;\\r\\n]+)(;.*)$")
+            result = result.replace(lineRegex) { match ->
+                "${match.groupValues[1]}$formatted${match.groupValues[3]}"
+            }
+        }
+        return result
+    }
+
     fun updateCode(newCode: String) {
+        if (newCode == _code.value) return
         _code.value = newCode
         saveCodeInternal(newCode)
         viewModelScope.launch(Dispatchers.Default) {
-            _customizerParams.value = parser.extractParameters(newCode)
+            val freshParams = parser.extractParameters(newCode)
+            for (p in freshParams) {
+                when (p) {
+                    is CustomizerParam.NumberParam -> {
+                        paramOverrides[p.name] = p.value
+                        if (!paramBoundsCache.containsKey(p.name)) {
+                            paramBoundsCache[p.name] = (p.min ?: 0.0) to (p.max ?: 100.0)
+                        }
+                    }
+                    is CustomizerParam.BooleanParam -> paramOverrides[p.name] = p.value
+                    is CustomizerParam.StringParam -> paramOverrides[p.name] = p.value
+                }
+            }
+            _customizerParams.value = extractParametersWithOverrides(newCode)
         }
     }
 
@@ -140,6 +202,8 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
 
     fun newProject() {
         val emptyTemplate = "\$fn = 32;\n"
+        paramOverrides.clear()
+        paramBoundsCache.clear()
         _code.value = emptyTemplate
         _currentFileName.value = "neues_modell.scad"
         prefs.edit().putString("current_file_name", "neues_modell.scad").apply()
@@ -150,6 +214,8 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun resetToSample() {
+        paramOverrides.clear()
+        paramBoundsCache.clear()
         _code.value = DEFAULT_SAMPLE_CODE
         _currentFileName.value = "beispiel_modell.scad"
         prefs.edit().putString("current_file_name", "beispiel_modell.scad").apply()
@@ -177,6 +243,8 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                 val inputStream = contentResolver.openInputStream(uri)
                 val loadedCode = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
                 withContext(Dispatchers.Main) {
+                    paramOverrides.clear()
+                    paramBoundsCache.clear()
                     _code.value = loadedCode
                     _currentFileName.value = fileName
                     prefs.edit().putString("current_file_name", fileName).apply()
@@ -253,17 +321,31 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateParameter(param: CustomizerParam) {
         when (param) {
-            is CustomizerParam.NumberParam -> paramOverrides[param.name] = param.value
+            is CustomizerParam.NumberParam -> {
+                paramOverrides[param.name] = param.value
+                if (!paramBoundsCache.containsKey(param.name)) {
+                    paramBoundsCache[param.name] = (param.min ?: 0.0) to (param.max ?: 100.0)
+                }
+            }
             is CustomizerParam.BooleanParam -> paramOverrides[param.name] = param.value
             is CustomizerParam.StringParam -> paramOverrides[param.name] = param.value
         }
         _customizerParams.value = _customizerParams.value.map {
             if (it.name == param.name) param else it
         }
-        evaluateInternal()
+        val updatedCode = applyParamOverridesToCode(_code.value)
+        _code.value = updatedCode
+        saveCodeInternal(updatedCode)
+
+        paramRenderJob?.cancel()
+        paramRenderJob = viewModelScope.launch {
+            delay(300)
+            evaluateInternal()
+        }
     }
 
     fun render() {
+        paramRenderJob?.cancel()
         evaluateInternal()
     }
 
@@ -277,16 +359,11 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val currentCode = _code.value
                 val params = withContext(Dispatchers.Default) {
-                    parser.extractParameters(currentCode)
+                    extractParametersWithOverrides(currentCode)
                 }
                 _customizerParams.value = params
 
-                // Ersetze geänderte Customizer-Parameter im Code
-                var codeToRender = currentCode
-                for ((k, v) in paramOverrides) {
-                    val regex = Regex("(?m)^\\s*${Regex.escape(k)}\\s*=.*?;")
-                    codeToRender = codeToRender.replace(regex, "$k = $v;")
-                }
+                val codeToRender = applyParamOverridesToCode(currentCode)
 
                 // Führe Berechnung ausschließlich mit dem echten OpenSCAD WASM-Kern aus (1:1 Desktop-Parität)
                 val stlBytes = wasmEngine.renderBinaryStl(codeToRender)

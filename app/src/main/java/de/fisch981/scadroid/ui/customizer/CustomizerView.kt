@@ -21,11 +21,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import java.util.Locale
+import kotlin.math.round
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -86,7 +89,7 @@ fun CustomizerView(
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
-                items(parameters) { param ->
+                items(parameters, key = { it.name }) { param ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -98,11 +101,18 @@ fun CustomizerView(
                         Column(modifier = Modifier.padding(14.dp)) {
                             when (param) {
                                 is CustomizerParam.NumberParam -> {
-                                    var sliderValue by remember(param.value) {
+                                    var isDragging by remember(param.name) { mutableStateOf(false) }
+                                    var sliderValue by remember(param.name) {
                                         mutableFloatStateOf(param.value.toFloat())
+                                    }
+                                    LaunchedEffect(param.value, isDragging) {
+                                        if (!isDragging) {
+                                            sliderValue = param.value.toFloat()
+                                        }
                                     }
                                     val min = param.min?.toFloat() ?: 0f
                                     val max = param.max?.toFloat() ?: 100f
+                                    val stepVal = param.step?.toFloat() ?: 1f
 
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -116,17 +126,27 @@ fun CustomizerView(
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(
-                                            text = if (sliderValue % 1f == 0f) "${sliderValue.toInt()}" else String.format("%.1f", sliderValue),
+                                            text = if (sliderValue % 1f == 0f) "${sliderValue.toInt()}" else String.format(Locale.US, "%.1f", sliderValue),
                                             style = MaterialTheme.typography.titleMedium,
                                             color = ScadGold,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                     Slider(
-                                        value = sliderValue,
-                                        onValueChange = {
-                                            sliderValue = it
-                                            onParameterChanged(param.copy(value = it.toDouble()))
+                                        value = sliderValue.coerceIn(min, max),
+                                        onValueChange = { raw ->
+                                            isDragging = true
+                                            val snapped = if (stepVal >= 1f && param.value % 1.0 == 0.0) {
+                                                round(raw)
+                                            } else {
+                                                round(raw * 10f) / 10f
+                                            }
+                                            sliderValue = snapped.coerceIn(min, max)
+                                            onParameterChanged(param.copy(value = sliderValue.toDouble()))
+                                        },
+                                        onValueChangeFinished = {
+                                            isDragging = false
+                                            onParameterChanged(param.copy(value = sliderValue.toDouble()))
                                         },
                                         valueRange = min..max,
                                         colors = SliderDefaults.colors(
