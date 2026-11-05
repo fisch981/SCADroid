@@ -113,9 +113,9 @@ tasks.register("copyReleaseApkToRoot") {
         if (apkFile.exists()) {
             val destFile = File(rootDir, "SCADroid-release.apk")
             apkFile.copyTo(destFile, overwrite = true)
-            val versionedFile = File(rootDir, "SCADroid-v${android.defaultConfig.versionName}.apk")
-            apkFile.copyTo(versionedFile, overwrite = true)
-            println("Release APK kopiert nach: ${destFile.absolutePath} und ${versionedFile.absolutePath}")
+            
+            
+            println("Release APK kopiert nach: ${destFile.absolutePath}")
         } else {
             throw GradleException("Release APK nicht gefunden unter: ${apkFile.absolutePath}")
         }
