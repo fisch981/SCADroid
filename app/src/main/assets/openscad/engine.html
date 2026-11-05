@@ -3,24 +3,28 @@
 <head>
   <meta charset="utf-8">
   <title>SCADroid OpenSCAD Engine</title>
+  <script src="openscad.js"></script>
 </head>
 <body>
-  <script type="module">
-    import { createOpenSCAD } from "./openscad.js";
-
+  <script>
     let instance = null;
 
     window.initOpenScad = async function() {
       try {
         if (!instance) {
-          instance = await createOpenSCAD();
+          const fn = window.createOpenSCAD || globalThis.createOpenSCAD;
+          if (typeof fn !== 'function') {
+            throw new Error("createOpenSCAD is not defined on window/globalThis");
+          }
+          instance = await fn();
         }
         if (window.AndroidBridge && window.AndroidBridge.onEngineReady) {
           window.AndroidBridge.onEngineReady();
         }
       } catch (err) {
+        console.error("Init Error: ", err);
         if (window.AndroidBridge && window.AndroidBridge.onError) {
-          window.AndroidBridge.onError("Init Error: " + err);
+          window.AndroidBridge.onError("Init Error: " + (err.stack || err.message || err));
         }
       }
     };
@@ -28,7 +32,11 @@
     window.renderScad = async function(scadCode) {
       try {
         if (!instance) {
-          instance = await createOpenSCAD();
+          const fn = window.createOpenSCAD || globalThis.createOpenSCAD;
+          if (typeof fn !== 'function') {
+            throw new Error("createOpenSCAD is not defined on window/globalThis");
+          }
+          instance = await fn();
         }
         const stlString = await instance.renderToStl(scadCode);
         if (window.AndroidBridge) {
@@ -44,8 +52,9 @@
           }
         }
       } catch (err) {
+        console.error("Render Error: ", err);
         if (window.AndroidBridge && window.AndroidBridge.onError) {
-          window.AndroidBridge.onError("Render Error: " + err);
+          window.AndroidBridge.onError("Render Error: " + (err.stack || err.message || err));
         }
       }
     };
@@ -57,8 +66,9 @@
         const decoded = new TextDecoder().decode(bytes);
         return window.renderScad(decoded);
       } catch (err) {
+        console.error("Base64 Decode Error: ", err);
         if (window.AndroidBridge && window.AndroidBridge.onError) {
-          window.AndroidBridge.onError("Base64 Decode Error: " + err);
+          window.AndroidBridge.onError("Base64 Decode Error: " + (err.stack || err.message || err));
         }
       }
     };

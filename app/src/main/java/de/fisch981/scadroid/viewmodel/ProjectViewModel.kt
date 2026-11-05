@@ -273,10 +273,13 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 // Führe Berechnung mit echtem OpenSCAD WASM-Kern aus
+                var wasmSuccess = false
                 val stlString = try {
-                    wasmEngine.render(codeToRender)
+                    val res = wasmEngine.render(codeToRender)
+                    wasmSuccess = true
+                    res
                 } catch (e: Exception) {
-                    appendLog("Hinweis: WASM-Engine Info (${e.message}), verwende Fallback.")
+                    appendLog("WASM-Engine Fehler/Hinweis: ${e.message}")
                     null
                 }
 
@@ -285,6 +288,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                         TriangleMesh.fromStlString(stlString)
                     }
                 } else {
+                    appendLog("WASM fehlgeschlagen - verwende internen Parser als Fallback...")
                     withContext(Dispatchers.Default) {
                         TriangleMesh.fromSolid(parseResult.solid)
                     }
@@ -299,7 +303,8 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                     isFullRender = true
                 )
 
-                appendLog("OpenSCAD Modell erfolgreich berechnet: ${mesh.triangleCount} Dreiecke (${mesh.vertexCount} Vertices) in ${duration} ms.")
+                val engineInfo = if (wasmSuccess) "Offizieller OpenSCAD Kern" else "Interner Fallback-Parser"
+                appendLog("Modell fertiggestellt ($engineInfo): ${mesh.triangleCount} Dreiecke (${mesh.vertexCount} Vertices) in ${duration} ms.")
             } catch (e: Throwable) {
                 _renderState.value = RenderState.Error("Fehler bei Geometrieberechnung: ${e.message}")
                 appendLog("FEHLER: ${e.message}")

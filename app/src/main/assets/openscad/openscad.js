@@ -5024,4 +5024,6 @@ async function createOpenSCAD(options = {}) {
     }
   };
 }
-export { createOpenSCAD };
+if (typeof globalThis !== 'undefined') globalThis.createOpenSCAD = createOpenSCAD;
+if (typeof window !== 'undefined') window.createOpenSCAD = createOpenSCAD;
+if (typeof module !== 'undefined' && module.exports) module.exports = { createOpenSCAD };

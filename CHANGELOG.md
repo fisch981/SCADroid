@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.17] - 2026-11-05
+
+### Geändert / Hinzugefügt
+- Zuverlaessiges Script-Loading fuer OpenSCAD WASM Engine in WebView ohne CORS-Restriktionen, erweitertes Logging und transparente Konsolenanzeige
+
 ## [0.1.16] - 2026-11-05
 
 ### Geändert / Hinzugefügt
