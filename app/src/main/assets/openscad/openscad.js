@@ -5011,12 +5011,237 @@ function uint8ArrayToBase64(bytes) {
   return globalThis.btoa(binary);
 }
 
+function splitTopLevelScadStatements(blockContent) {
+  var stmts = [];
+  var n = blockContent.length;
+  var i = 0;
+  var stmtStart = 0;
+  var paren = 0, bracket = 0, brace = 0;
+
+  while (i < n) {
+    var c = blockContent[i];
+    if (c === '/' && i + 1 < n && blockContent[i + 1] === '/') {
+      i += 2;
+      while (i < n && blockContent[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && i + 1 < n && blockContent[i + 1] === '*') {
+      i += 2;
+      while (i + 1 < n && !(blockContent[i] === '*' && blockContent[i + 1] === '/')) i++;
+      i += 2;
+      continue;
+    }
+    if (c === '"') {
+      i++;
+      while (i < n && blockContent[i] !== '"') {
+        if (blockContent[i] === '\\') i++;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === '(') paren++;
+    else if (c === ')') { if (paren > 0) paren--; }
+    else if (c === '[') bracket++;
+    else if (c === ']') { if (bracket > 0) bracket--; }
+    else if (c === '{') brace++;
+    else if (c === '}') {
+      if (brace > 0) brace--;
+      if (brace === 0 && paren === 0 && bracket === 0) {
+        var look = i + 1;
+        while (look < n) {
+          if (/\s/.test(blockContent[look])) { look++; continue; }
+          if (blockContent[look] === '/' && look + 1 < n && blockContent[look + 1] === '/') {
+            look += 2;
+            while (look < n && blockContent[look] !== '\n') look++;
+            continue;
+          }
+          if (blockContent[look] === '/' && look + 1 < n && blockContent[look + 1] === '*') {
+            look += 2;
+            while (look + 1 < n && !(blockContent[look] === '*' && blockContent[look + 1] === '/')) look++;
+            look += 2;
+            continue;
+          }
+          break;
+        }
+        if (blockContent.slice(look).match(/^else\b/)) {
+          i++;
+          continue;
+        }
+        var s = blockContent.slice(stmtStart, i + 1).trim();
+        if (s.length > 0) stmts.push(s);
+        stmtStart = i + 1;
+      }
+    } else if (c === ';' && brace === 0 && paren === 0 && bracket === 0) {
+      var s2 = blockContent.slice(stmtStart, i + 1).trim();
+      if (s2.length > 0) stmts.push(s2);
+      stmtStart = i + 1;
+    }
+    i++;
+  }
+  var rem = blockContent.slice(stmtStart).trim();
+  var remNoComments = rem.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '').trim();
+  if (remNoComments.length > 0) {
+    stmts.push(rem);
+  }
+  return stmts;
+}
+
+function stripLeadingScadComments(str) {
+  var s = str.trim();
+  while (true) {
+    var m1 = s.match(/^\/\/[^\n]*(?:\n|$)/);
+    if (m1) { s = s.slice(m1[0].length).trim(); continue; }
+    var m2 = s.match(/^\/\*[\s\S]*?\*\//);
+    if (m2) { s = s.slice(m2[0].length).trim(); continue; }
+    break;
+  }
+  return s;
+}
+
+function transformMinkowskiBlocks(code, state) {
+  state = state || { primCounter: 0 };
+  var out = "";
+  var i = 0;
+  var n = code.length;
+  while (i < n) {
+    if (code[i] === '/' && i + 1 < n && code[i + 1] === '/') {
+      var start = i;
+      i += 2;
+      while (i < n && code[i] !== '\n') i++;
+      out += code.slice(start, i);
+      continue;
+    }
+    if (code[i] === '/' && i + 1 < n && code[i + 1] === '*') {
+      var startB = i;
+      i += 2;
+      while (i + 1 < n && !(code[i] === '*' && code[i + 1] === '/')) i++;
+      i += 2;
+      out += code.slice(startB, i);
+      continue;
+    }
+    if (code[i] === '"') {
+      var startS = i++;
+      while (i < n && code[i] !== '"') {
+        if (code[i] === '\\') i++;
+        i++;
+      }
+      i++;
+      out += code.slice(startS, i);
+      continue;
+    }
+    var sub = code.slice(i);
+    var m = sub.match(/^\bminkowski\s*\(([^)]*)\)\s*\{/);
+    if (m && (i === 0 || !/[a-zA-Z0-9_$]/.test(code[i - 1]))) {
+      var minkArgs = m[1];
+      var bodyStart = i + m[0].length;
+      var brace = 1, paren = 0, bracket = 0;
+      var j = bodyStart;
+      while (j < n && brace > 0) {
+        var ch = code[j];
+        if (ch === '/' && j + 1 < n && code[j + 1] === '/') {
+          j += 2;
+          while (j < n && code[j] !== '\n') j++;
+          continue;
+        }
+        if (ch === '/' && j + 1 < n && code[j + 1] === '*') {
+          j += 2;
+          while (j + 1 < n && !(code[j] === '*' && code[j + 1] === '/')) j++;
+          j += 2;
+          continue;
+        }
+        if (ch === '"') {
+          j++;
+          while (j < n && code[j] !== '"') {
+            if (code[j] === '\\') j++;
+            j++;
+          }
+          j++;
+          continue;
+        }
+        if (ch === '{') brace++;
+        else if (ch === '}') brace--;
+        else if (ch === '(') paren++;
+        else if (ch === ')') { if (paren > 0) paren--; }
+        else if (ch === '[') bracket++;
+        else if (ch === ']') { if (bracket > 0) bracket--; }
+        j++;
+      }
+      if (brace === 0) {
+        var innerBody = code.slice(bodyStart, j - 1);
+        innerBody = innerBody.replace(/(\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*")|\b(rotate\s*\(\s*\[0\.0\d+,\s*0\.0\d+,\s*0\.0\d+\]\s*\)\s*(?:cube|cylinder)\s*\()|\b(cube|cylinder)\s*\(/g, function(match, commentOrStr, alreadyRot, prim) {
+          if (commentOrStr || alreadyRot) return match;
+          state.primCounter++;
+          var cIdx = state.primCounter;
+          var a1 = ((0.019 + cIdx * 0.0137) % 0.071 + 0.013).toFixed(4);
+          var a2 = ((0.029 + cIdx * 0.0193) % 0.071 + 0.013).toFixed(4);
+          var a3 = ((0.037 + cIdx * 0.0157) % 0.071 + 0.013).toFixed(4);
+          return "rotate([" + a1 + ", " + a2 + ", " + a3 + "]) " + prim + "(";
+        });
+        var stmts = splitTopLevelScadStatements(innerBody);
+        var replaced = false;
+        if (stmts.length >= 2) {
+          for (var sIdx = 0; sIdx < stmts.length; sIdx++) {
+            var cleanStmt = stripLeadingScadComments(stmts[sIdx]);
+            var unionMatch = cleanStmt.match(/^(?:union\s*\(\s*\)\s*)?\{([\s\S]*)\}$/);
+            if (unionMatch) {
+              var unionChildren = splitTopLevelScadStatements(unionMatch[1]);
+              var varStmts = [];
+              var geomStmts = [];
+              for (var u = 0; u < unionChildren.length; u++) {
+                var uClean = stripLeadingScadComments(unionChildren[u]);
+                if (/^[a-zA-Z0-9_$]+\s*=[^=][\s\S]*;$/.test(uClean)) {
+                  varStmts.push(unionChildren[u]);
+                } else {
+                  geomStmts.push(unionChildren[u]);
+                }
+              }
+              if (geomStmts.length >= 2) {
+                var beforeStmts = stmts.slice(0, sIdx);
+                var afterStmts = stmts.slice(sIdx + 1);
+                var prefixVars = varStmts.length > 0 ? varStmts.join("\n") + "\n" : "";
+                var distributed = "union() {\n" + prefixVars + geomStmts.map(function(uchild) {
+                  var combined = beforeStmts.concat([uchild]).concat(afterStmts).join("\n");
+                  return "minkowski(" + minkArgs + ") {\n" + combined + "\n}";
+                }).join("\n") + "\n}";
+                out += transformMinkowskiBlocks(distributed, state);
+                replaced = true;
+                break;
+              }
+            }
+          }
+        }
+        if (!replaced) {
+          var minkInner = transformMinkowskiBlocks(innerBody, state);
+          out += "minkowski(" + minkArgs + ") {\n" + minkInner + "\n}";
+        }
+        i = j;
+        continue;
+      }
+    }
+    out += code[i];
+    i++;
+  }
+  return out;
+}
+
 function prepareScadForManifold(code) {
-  if (/\bmodule\s+sphere\b/.test(code)) return code;
-  return code.replace(/(\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*")|\bsphere\s*\(/g, function(match, commentOrStr) {
-    if (commentOrStr) return match;
-    return "rotate([0.037, 0.053, 0.071]) sphere(";
-  });
+  var result = code;
+  if (!/\bmodule\s+minkowski\b/.test(result) && /\bminkowski\b/.test(result)) {
+    result = transformMinkowskiBlocks(result);
+  }
+  if (!/\bmodule\s+sphere\b/.test(result) && /\bsphere\b/.test(result)) {
+    var sIdx = 0;
+    result = result.replace(/(\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*")|\bsphere\s*\(/g, function(match, commentOrStr) {
+      if (commentOrStr) return match;
+      sIdx++;
+      var a1 = ((0.023 + sIdx * 0.0173) % 0.079 + 0.011).toFixed(4);
+      var a2 = ((0.031 + sIdx * 0.0239) % 0.079 + 0.011).toFixed(4);
+      var a3 = ((0.047 + sIdx * 0.0197) % 0.079 + 0.011).toFixed(4);
+      return "rotate([" + a1 + ", " + a2 + ", " + a3 + "]) sphere(";
+    });
+  }
+  return result;
 }
 
 var FONTS_CONF_XML = '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n  <dir>/fonts</dir>\n  <alias><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>\n  <alias><family>Helvetica</family><prefer><family>Liberation Sans</family></prefer></alias>\n  <alias><family>sans-serif</family><prefer><family>Liberation Sans</family></prefer></alias>\n</fontconfig>';

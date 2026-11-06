@@ -53,10 +53,26 @@ fun ViewportScreen(
     modifier: Modifier = Modifier
 ) {
     val renderer = remember { ScadGlRenderer() }
+    val prevCenter = remember { androidx.compose.runtime.mutableStateOf<de.fisch981.scadroid.engine.Vector3?>(null) }
+    val prevRadius = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
 
-    // Aktualisiere das gerenderte Mesh bei Änderungen
+    // Aktualisiere das gerenderte Mesh bei Änderungen und zentriere die Kamera bei neuen Modellen automatisch
     LaunchedEffect(mesh) {
         renderer.currentMesh = mesh
+        if (mesh.triangleCount > 0) {
+            val oldCenter = prevCenter.value
+            val oldRad = prevRadius.floatValue
+            val centerShift = if (oldCenter != null) (mesh.center - oldCenter).length() else Float.MAX_VALUE
+            val radiusRatio = if (oldRad > 0.01f) max(mesh.boundingRadius / oldRad, oldRad / max(mesh.boundingRadius, 0.01f)) else Float.MAX_VALUE
+            if (oldCenter == null || oldRad <= 0.01f || centerShift > max(oldRad, mesh.boundingRadius) * 0.45f || radiusRatio > 1.6f) {
+                renderer.resetCamera(mesh)
+            }
+            prevCenter.value = mesh.center
+            prevRadius.floatValue = mesh.boundingRadius
+        } else {
+            prevCenter.value = null
+            prevRadius.floatValue = 0f
+        }
     }
 
     Box(

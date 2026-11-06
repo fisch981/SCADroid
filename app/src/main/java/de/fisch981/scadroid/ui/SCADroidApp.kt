@@ -149,6 +149,7 @@ fun SCADroidApp(
                 },
                 actions = {
                     // Render-Button: Führt CSG-Berechnung aus und wechselt direkt zur 3D-Ansicht
+                    val isEvaluating = renderState is de.fisch981.scadroid.model.RenderState.Evaluating
                     Button(
                         onClick = {
                             viewModel.render()
@@ -162,19 +163,34 @@ fun SCADroidApp(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                         modifier = Modifier.padding(end = 4.dp)
                     ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = "Render",
-                            tint = Color(0xFF121212),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            "Render",
-                            color = Color(0xFF121212),
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                        if (isEvaluating) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Color(0xFF121212)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Berechne...",
+                                color = Color(0xFF121212),
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = "Render",
+                                tint = Color(0xFF121212),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "Render",
+                                color = Color(0xFF121212),
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
                     }
 
                     // More Menu (Speichern, STL-Export, Öffnen, etc.)

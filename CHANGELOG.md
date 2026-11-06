@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.21] - 2026-11-06
+
+### Geändert / Hinzugefügt
+- Automatisches Update
+
 ## [0.1.20] - 2026-11-05
 
 ### Geändert / Hinzugefügt

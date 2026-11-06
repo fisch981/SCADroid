@@ -13,8 +13,8 @@ android {
         applicationId = "de.fisch981.scadroid"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.1.20"
+        versionCode = 22
+        versionName = "0.1.21"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

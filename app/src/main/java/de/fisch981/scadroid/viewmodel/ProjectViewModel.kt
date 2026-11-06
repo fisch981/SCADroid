@@ -79,6 +79,7 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
     private val paramOverrides = mutableMapOf<String, Any>()
     private val paramBoundsCache = mutableMapOf<String, Pair<Double, Double>>()
     private var paramRenderJob: Job? = null
+    private var evaluateJob: Job? = null
 
     private val _logOutput = MutableStateFlow("[${timeFormat.format(Date())}] SCADroid IDE initialisiert.\n[${timeFormat.format(Date())}] Berechne 3D-Initialmodell...")
     val logOutput: StateFlow<String> = _logOutput.asStateFlow()
@@ -161,24 +162,31 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         return result
     }
 
+    private fun syncOverridesFromCode(codeStr: String) {
+        val freshParams = parser.extractParameters(codeStr)
+        val freshNames = freshParams.map { it.name }.toSet()
+        paramOverrides.keys.retainAll(freshNames)
+        paramBoundsCache.keys.retainAll(freshNames)
+        for (p in freshParams) {
+            when (p) {
+                is CustomizerParam.NumberParam -> {
+                    paramOverrides[p.name] = p.value
+                    if (!paramBoundsCache.containsKey(p.name)) {
+                        paramBoundsCache[p.name] = (p.min ?: 0.0) to (p.max ?: 100.0)
+                    }
+                }
+                is CustomizerParam.BooleanParam -> paramOverrides[p.name] = p.value
+                is CustomizerParam.StringParam -> paramOverrides[p.name] = p.value
+            }
+        }
+    }
+
     fun updateCode(newCode: String) {
         if (newCode == _code.value) return
         _code.value = newCode
         saveCodeInternal(newCode)
         viewModelScope.launch(Dispatchers.Default) {
-            val freshParams = parser.extractParameters(newCode)
-            for (p in freshParams) {
-                when (p) {
-                    is CustomizerParam.NumberParam -> {
-                        paramOverrides[p.name] = p.value
-                        if (!paramBoundsCache.containsKey(p.name)) {
-                            paramBoundsCache[p.name] = (p.min ?: 0.0) to (p.max ?: 100.0)
-                        }
-                    }
-                    is CustomizerParam.BooleanParam -> paramOverrides[p.name] = p.value
-                    is CustomizerParam.StringParam -> paramOverrides[p.name] = p.value
-                }
-            }
+            syncOverridesFromCode(newCode)
             _customizerParams.value = extractParametersWithOverrides(newCode)
         }
     }
@@ -355,17 +363,18 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         paramRenderJob?.cancel()
         paramRenderJob = viewModelScope.launch {
             delay(300)
-            evaluateInternal()
+            evaluateInternal(syncFromCode = false)
         }
     }
 
     fun render() {
         paramRenderJob?.cancel()
-        evaluateInternal()
+        evaluateInternal(syncFromCode = true)
     }
 
-    private fun evaluateInternal() {
-        viewModelScope.launch {
+    private fun evaluateInternal(syncFromCode: Boolean = true) {
+        evaluateJob?.cancel()
+        evaluateJob = viewModelScope.launch {
             _renderState.value = RenderState.Evaluating(0.2f, "Berechne 3D-Modell (OpenSCAD Core)...")
             appendLog("Starte 1:1 3D-Berechnung (OpenSCAD C++ / Manifold-Kern)...")
 
@@ -374,11 +383,14 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val currentCode = _code.value
                 val params = withContext(Dispatchers.Default) {
+                    if (syncFromCode) {
+                        syncOverridesFromCode(currentCode)
+                    }
                     extractParametersWithOverrides(currentCode)
                 }
                 _customizerParams.value = params
 
-                val codeToRender = applyParamOverridesToCode(currentCode)
+                val codeToRender = if (syncFromCode) currentCode else applyParamOverridesToCode(currentCode)
 
                 // Führe Berechnung ausschließlich mit dem echten OpenSCAD WASM-Kern aus (1:1 Desktop-Parität)
                 val stlBytes = wasmEngine.renderBinaryStl(codeToRender)
@@ -401,6 +413,8 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                 )
 
                 appendLog("Modell fertiggestellt (Offizieller OpenSCAD Kern): ${mesh.triangleCount} Dreiecke (${mesh.vertexCount} Vertices) in ${duration} ms.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 _renderState.value = RenderState.Error("Fehler bei OpenSCAD-Berechnung: ${e.message}")
                 appendLog("FEHLER: ${e.message}")
