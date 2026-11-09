@@ -122,12 +122,12 @@ class TriangleMesh(
                 val a: Float
                 when (attr) {
                     1 -> {
-                        // OpenSCAD '#' Highlight / Debug Modifier (Transparentes Rot/Pink)
-                        r = 1.0f; g = 0.31f; b = 0.31f; a = 0.60f
+                        // OpenSCAD '#' Highlight / Debug Modifier (Halbtransparentes Rot/Pink)
+                        r = 1.0f; g = 0.35f; b = 0.35f; a = 0.40f
                     }
                     2 -> {
-                        // OpenSCAD '%' Background / Transparent Modifier (Transparentes Grau)
-                        r = 0.70f; g = 0.70f; b = 0.72f; a = 0.45f
+                        // OpenSCAD '%' Background / Transparent Modifier (Halbtransparentes Grau)
+                        r = 0.75f; g = 0.75f; b = 0.78f; a = 0.28f
                     }
                     else -> {
                         r = color.x; g = color.y; b = color.z; a = 1.0f

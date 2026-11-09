@@ -54,13 +54,13 @@ class BinaryStlMeshTest {
 
         // Check '#' highlight color (vertex 3 -> index 3 * 4 = 12 in colorBuffer)
         assertEquals(1.0f, mesh.colorBuffer.get(12), 1e-3f)
-        assertEquals(0.31f, mesh.colorBuffer.get(13), 1e-3f)
-        assertEquals(0.31f, mesh.colorBuffer.get(14), 1e-3f)
-        assertEquals(0.60f, mesh.colorBuffer.get(15), 1e-3f)
+        assertEquals(0.35f, mesh.colorBuffer.get(13), 1e-3f)
+        assertEquals(0.35f, mesh.colorBuffer.get(14), 1e-3f)
+        assertEquals(0.40f, mesh.colorBuffer.get(15), 1e-3f)
 
         // Check '%' background color (vertex 6 -> index 6 * 4 = 24 in colorBuffer)
-        assertEquals(0.70f, mesh.colorBuffer.get(24), 1e-3f)
-        assertEquals(0.45f, mesh.colorBuffer.get(27), 1e-3f)
+        assertEquals(0.75f, mesh.colorBuffer.get(24), 1e-3f)
+        assertEquals(0.28f, mesh.colorBuffer.get(27), 1e-3f)
 
         // Export to Binary STL should only export the 1 opaque CSG triangle
         val exported = ByteArrayOutputStream()

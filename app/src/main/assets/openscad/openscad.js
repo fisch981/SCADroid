@@ -5379,6 +5379,47 @@ function extractModifiedCsg(blockText, modChar) {
   return kept.join("\n");
 }
 
+function extractOpaqueCsg(blockText) {
+  var stmts = splitCsgStatements(blockText);
+  var kept = [];
+  for (var i = 0; i < stmts.length; i++) {
+    var stmt = stmts[i].trim();
+    if (stmt.charAt(0) === '#') {
+      continue;
+    }
+    var cleanStmt = stmt.replace(/^[#!%*]+\s*/, '');
+    var openBrace = cleanStmt.indexOf('{');
+    if (openBrace !== -1 && cleanStmt.endsWith('}')) {
+      var header = cleanStmt.slice(0, openBrace).trim();
+      var body = cleanStmt.slice(openBrace + 1, cleanStmt.length - 1).trim();
+      var isDiff = /^difference\b/.test(header);
+      if (isDiff) {
+        var diffChildren = splitCsgStatements(body);
+        if (diffChildren.length > 0) {
+          if (diffChildren[0].trim().charAt(0) === '#') {
+            continue;
+          }
+          var cleanDiff = [stripAllCsgModifiers(diffChildren[0])];
+          for (var d = 1; d < diffChildren.length; d++) {
+            cleanDiff.push(stripAllCsgModifiers(diffChildren[d]));
+          }
+          kept.push(header + " {\n" + cleanDiff.join("\n") + "\n}");
+          continue;
+        }
+      }
+      var innerOpaque = extractOpaqueCsg(body);
+      if (innerOpaque && innerOpaque.trim().length > 0) {
+        kept.push(header + " {\n" + innerOpaque + "\n}");
+      }
+    } else {
+      kept.push(stripAllCsgModifiers(cleanStmt));
+    }
+  }
+  if (kept.length === 0) return "";
+  if (kept.length === 1) return kept[0];
+  return "union() {\n" + kept.join("\n") + "\n}";
+}
+
 function getBinstlTriangleCount(bytes) {
   if (!bytes || bytes.length < 84) return 0;
   var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -5556,14 +5597,11 @@ async function createOpenSCAD(options = {}) {
   let lastInstance = null;
   return {
     async renderToBinaryStlBase64(code) {
-      const preparedCode = prepareScadForManifold(code);
-      const mainRes = await runSingleBinstlRender(preparedCode, code, options, true);
-      lastInstance = mainRes.instance;
-
       const hasHash = hasScadModifier(code, '#');
       const hasPct = hasScadModifier(code, '%');
       const hasBang = hasScadModifier(code, '!');
 
+      let mainRes = null;
       let highlightBytes = null;
       let backgroundBytes = null;
 
@@ -5594,9 +5632,24 @@ async function createOpenSCAD(options = {}) {
               backgroundBytes = pRes.outBytes;
             }
           }
+          // Extract opaque CSG tree, excluding positive objects that are highlighted (#)
+          const opaqueCsg = extractOpaqueCsg(csgText);
+          if (opaqueCsg && opaqueCsg.trim().length > 0) {
+            const opaquePrepared = prepareScadForManifold(opaqueCsg);
+            mainRes = await runSingleBinstlRender(opaquePrepared, code, options, true);
+          } else {
+            mainRes = { outBytes: null, logs: [], errors: [], exitCode: 0, allLogs: "" };
+          }
+          lastInstance = mainRes.instance || csgInst;
         } catch (modErr) {
           console.warn("[OpenSCAD Modifier Pass Warning]:", modErr);
         }
+      }
+
+      if (!mainRes) {
+        const preparedCode = prepareScadForManifold(code);
+        mainRes = await runSingleBinstlRender(preparedCode, code, options, true);
+        lastInstance = mainRes.instance;
       }
 
       const combined = combineStlBuffers(mainRes.outBytes, highlightBytes, backgroundBytes);

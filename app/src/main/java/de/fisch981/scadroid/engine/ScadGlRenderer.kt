@@ -163,16 +163,16 @@ class ScadGlRenderer : GLSurfaceView.Renderer {
             GLES30.glEnable(GLES30.GL_BLEND)
             GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
             GLES30.glEnable(GLES30.GL_POLYGON_OFFSET_FILL)
-            GLES30.glPolygonOffset(-1.5f, -1.5f)
+            GLES30.glPolygonOffset(-1.0f, -1.0f)
             GLES30.glDepthMask(false)
-            GLES30.glDisable(GLES30.GL_CULL_FACE)
+            GLES30.glEnable(GLES30.GL_CULL_FACE)
+            GLES30.glCullFace(GLES30.GL_BACK)
 
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, mesh.opaqueVertexCount, overlayCount)
 
             GLES30.glDepthMask(true)
             GLES30.glDisable(GLES30.GL_POLYGON_OFFSET_FILL)
             GLES30.glDisable(GLES30.GL_BLEND)
-            GLES30.glEnable(GLES30.GL_CULL_FACE)
         }
 
         GLES30.glDisableVertexAttribArray(0)
@@ -280,16 +280,20 @@ class ScadGlRenderer : GLSurfaceView.Renderer {
             out vec4 fragColor;
             void main() {
                 vec3 n = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
-                vec3 ambient = 0.38 * vColor.rgb;
+                float ambFactor = vColor.a < 0.99 ? 0.45 : 0.38;
+                float diffFactor1 = vColor.a < 0.99 ? 0.45 : 0.65;
+                float diffFactor2 = vColor.a < 0.99 ? 0.15 : 0.25;
+
+                vec3 ambient = ambFactor * vColor.rgb;
                 vec3 lightDir1 = normalize(vec3(0.5, -0.6, 1.0));
                 float diff1 = max(dot(n, lightDir1), 0.0);
-                vec3 diffuse1 = diff1 * vColor.rgb * 0.65;
+                vec3 diffuse1 = diff1 * vColor.rgb * diffFactor1;
                 
                 vec3 lightDir2 = normalize(vec3(-0.6, 0.5, 0.4));
                 float diff2 = max(dot(n, lightDir2), 0.0);
-                vec3 diffuse2 = diff2 * vColor.rgb * 0.25;
+                vec3 diffuse2 = diff2 * vColor.rgb * diffFactor2;
 
-                vec3 finalColor = ambient + diffuse1 + diffuse2;
+                vec3 finalColor = clamp(ambient + diffuse1 + diffuse2, 0.0, 1.0);
                 fragColor = vec4(finalColor, vColor.a);
             }
         """.trimIndent()

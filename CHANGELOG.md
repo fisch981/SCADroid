@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.23] - 2026-11-09
+
+### Geändert / Hinzugefügt
+- Fix # highlight modifier transparency: exclude positive # from opaque pass, enable backface culling and optimal alpha in OpenGL ES
+
 ## [0.1.22] - 2026-11-09
 
 ### Geändert / Hinzugefügt
