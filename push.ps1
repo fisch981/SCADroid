@@ -1,4 +1,5 @@
 param (
+    [Alias("Message")]
     [string]$ChangeSummary = "Automatisches Update",
     [string]$BumpType = "patch" # patch, minor, major
 )
@@ -61,7 +62,12 @@ if ($existingChangelog -match '(?s)(# Changelog.*?---\s*\r?\n\r?\n)(.*)') {
 
 # 3. Release APK kompilieren
 Write-Host "==> Kompiliere Release-APK v$newName..." -ForegroundColor Cyan
-$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot"
+if (-not $env:JAVA_HOME -or -not (Test-Path $env:JAVA_HOME)) {
+    $jdkDir = Get-ChildItem "C:\Program Files\Microsoft\jdk-17*" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if ($jdkDir) {
+        $env:JAVA_HOME = $jdkDir.FullName
+    }
+}
 Remove-Item "SCADroid-release.apk" -ErrorAction SilentlyContinue
 Remove-Item "SCADroid-v*.apk" -ErrorAction SilentlyContinue
 

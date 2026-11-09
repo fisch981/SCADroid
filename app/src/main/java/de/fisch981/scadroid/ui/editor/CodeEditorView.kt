@@ -55,7 +55,7 @@ fun CodeEditorView(
     var canUndo by remember { mutableStateOf(false) }
     var canRedo by remember { mutableStateOf(false) }
 
-    val defaultSymbols = listOf(";", "{", "}", "[", "]", "(", ")", "=", "\$fn = ", "cube()", "cylinder()", "sphere()", "difference()", "union()")
+    val defaultSymbols = listOf(";", "{", "}", "[", "]", "(", ")", "=", "#", "!", "%", "*", "\$fn = ", "cube()", "cylinder()", "sphere()", "difference()", "union()")
 
     // Finde passende Vorschläge basierend auf aktuellem Teilwort unter dem Cursor
     val matchingSnippets = if (currentPrefix.length >= 1) {

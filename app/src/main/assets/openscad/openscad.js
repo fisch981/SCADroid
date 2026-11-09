@@ -5180,10 +5180,10 @@ function transformMinkowskiBlocks(code, state) {
         });
         var stmts = splitTopLevelScadStatements(innerBody);
         var replaced = false;
-        if (stmts.length >= 2) {
+        if (stmts.length >= 2 && !hasScadModifier(innerBody, '!')) {
           for (var sIdx = 0; sIdx < stmts.length; sIdx++) {
             var cleanStmt = stripLeadingScadComments(stmts[sIdx]);
-            var unionMatch = cleanStmt.match(/^(?:union\s*\(\s*\)\s*)?\{([\s\S]*)\}$/);
+            var unionMatch = cleanStmt.match(/^(?:[#%]\s*)?(?:union\s*\(\s*\)\s*)?\{([\s\S]*)\}$/);
             if (unionMatch) {
               var unionChildren = splitTopLevelScadStatements(unionMatch[1]);
               var varStmts = [];
@@ -5221,6 +5221,207 @@ function transformMinkowskiBlocks(code, state) {
     }
     out += code[i];
     i++;
+  }
+  return out;
+}
+
+function hasScadModifier(code, modChar) {
+  var n = code.length;
+  var i = 0;
+  while (i < n) {
+    var c = code[i];
+    if (c === '/' && i + 1 < n && code[i + 1] === '/') {
+      i += 2;
+      while (i < n && code[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && i + 1 < n && code[i + 1] === '*') {
+      i += 2;
+      while (i + 1 < n && !(code[i] === '*' && code[i + 1] === '/')) i++;
+      i += 2;
+      continue;
+    }
+    if (c === '"') {
+      i++;
+      while (i < n && code[i] !== '"') {
+        if (code[i] === '\\') i++;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === modChar) return true;
+    i++;
+  }
+  return false;
+}
+
+function splitCsgStatements(blockContent) {
+  var stmts = [];
+  var n = blockContent.length;
+  var i = 0, stmtStart = 0;
+  var paren = 0, bracket = 0, brace = 0;
+  while (i < n) {
+    var c = blockContent[i];
+    if (c === '"') {
+      i++;
+      while (i < n && blockContent[i] !== '"') {
+        if (blockContent[i] === '\\') i++;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === '(') paren++;
+    else if (c === ')') { if (paren > 0) paren--; }
+    else if (c === '[') bracket++;
+    else if (c === ']') { if (bracket > 0) bracket--; }
+    else if (c === '{') brace++;
+    else if (c === '}') {
+      if (brace > 0) brace--;
+      if (brace === 0 && paren === 0 && bracket === 0) {
+        var s = blockContent.slice(stmtStart, i + 1).trim();
+        if (s.length > 0) stmts.push(s);
+        stmtStart = i + 1;
+      }
+    } else if (c === ';' && brace === 0 && paren === 0 && bracket === 0) {
+      var s2 = blockContent.slice(stmtStart, i + 1).trim();
+      if (s2.length > 0) stmts.push(s2);
+      stmtStart = i + 1;
+    }
+    i++;
+  }
+  return stmts;
+}
+
+function stripAllCsgModifiers(csgCode) {
+  var out = "";
+  var n = csgCode.length;
+  var i = 0;
+  var atStmtStart = true;
+  while (i < n) {
+    var c = csgCode[i];
+    if (c === '"') {
+      atStmtStart = false;
+      var startS = i++;
+      while (i < n && csgCode[i] !== '"') {
+        if (csgCode[i] === '\\') i++;
+        i++;
+      }
+      if (i < n) i++;
+      out += csgCode.slice(startS, i);
+      continue;
+    }
+    if (/\s/.test(c)) {
+      out += c;
+      i++;
+      continue;
+    }
+    if (atStmtStart && (c === '#' || c === '%')) {
+      i++;
+      continue;
+    }
+    if (c === '{' || c === '}' || c === ';') {
+      atStmtStart = true;
+    } else {
+      atStmtStart = false;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+function extractModifiedCsg(blockText, modChar) {
+  var stmts = splitCsgStatements(blockText);
+  var kept = [];
+  for (var i = 0; i < stmts.length; i++) {
+    var stmt = stmts[i].trim();
+    if (stmt.charAt(0) === modChar) {
+      var cleanSubtree = stripAllCsgModifiers(stmt.slice(1).trim());
+      kept.push(cleanSubtree);
+      continue;
+    }
+    var cleanStmt = stmt.replace(/^[#!%*]+\s*/, '');
+    var p = 0, b = 0, openBrace = -1;
+    for (var k = 0; k < cleanStmt.length; k++) {
+      var ch = cleanStmt[k];
+      if (ch === '"') {
+        k++;
+        while (k < cleanStmt.length && cleanStmt[k] !== '"') {
+          if (cleanStmt[k] === '\\') k++;
+          k++;
+        }
+        continue;
+      }
+      if (ch === '(') p++;
+      else if (ch === ')') { if (p > 0) p--; }
+      else if (ch === '[') b++;
+      else if (ch === ']') { if (b > 0) b--; }
+      else if (ch === '{' && p === 0 && b === 0) {
+        openBrace = k;
+        break;
+      }
+    }
+    if (openBrace !== -1 && cleanStmt.endsWith('}')) {
+      var header = cleanStmt.slice(0, openBrace).trim();
+      var inner = cleanStmt.slice(openBrace + 1, cleanStmt.length - 1);
+      var extractedInner = extractModifiedCsg(inner, modChar);
+      if (extractedInner.length > 0) {
+        if (/^(multmatrix|linear_extrude|rotate_extrude|resize|offset|projection)\b/.test(header)) {
+          kept.push(header + " {\n" + extractedInner + "\n}");
+        } else {
+          kept.push("union() {\n" + extractedInner + "\n}");
+        }
+      }
+    }
+  }
+  return kept.join("\n");
+}
+
+function getBinstlTriangleCount(bytes) {
+  if (!bytes || bytes.length < 84) return 0;
+  var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  var count = view.getUint32(80, true);
+  var maxPossible = Math.floor((bytes.length - 84) / 50);
+  return (count >= 1 && count <= maxPossible) ? count : maxPossible;
+}
+
+function combineStlBuffers(mainBytes, highlightBytes, backgroundBytes) {
+  var nMain = getBinstlTriangleCount(mainBytes);
+  var nHigh = getBinstlTriangleCount(highlightBytes);
+  var nBg = getBinstlTriangleCount(backgroundBytes);
+  var totalTri = nMain + nHigh + nBg;
+  if (totalTri <= 0) return null;
+
+  var out = new Uint8Array(84 + totalTri * 50);
+  if (mainBytes && mainBytes.length >= 80) {
+    out.set(mainBytes.subarray(0, 80), 0);
+  }
+  var outView = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  outView.setUint32(80, totalTri, true);
+
+  var offset = 84;
+  if (nMain > 0) {
+    out.set(mainBytes.subarray(84, 84 + nMain * 50), offset);
+    for (var i = 0; i < nMain; i++) {
+      outView.setUint16(offset + i * 50 + 48, 0, true);
+    }
+    offset += nMain * 50;
+  }
+  if (nHigh > 0) {
+    out.set(highlightBytes.subarray(84, 84 + nHigh * 50), offset);
+    for (var j = 0; j < nHigh; j++) {
+      outView.setUint16(offset + j * 50 + 48, 1, true);
+    }
+    offset += nHigh * 50;
+  }
+  if (nBg > 0) {
+    out.set(backgroundBytes.subarray(84, 84 + nBg * 50), offset);
+    for (var k = 0; k < nBg; k++) {
+      outView.setUint16(offset + k * 50 + 48, 2, true);
+    }
+    offset += nBg * 50;
   }
   return out;
 }
@@ -5301,54 +5502,117 @@ async function initWasm(options = {}) {
   return openscadWasm;
 }
 
+async function runSingleBinstlRender(scadCode, rawProjectCode, options, forwardLogs) {
+  const logs = [];
+  const errors = [];
+  const instance = await initWasm({
+    ...options,
+    print: text => {
+      logs.push(text);
+      if (forwardLogs) {
+        if (options.print) options.print(text);
+        else console.log("[OpenSCAD]:", text);
+      }
+    },
+    printErr: text => {
+      logs.push(text);
+      if (text.includes("ERROR:") || text.includes("Can't parse file")) {
+        errors.push(text);
+      }
+      if (forwardLogs) {
+        if (options.printErr) options.printErr(text);
+        else console.log("[OpenSCAD]:", text);
+      }
+    }
+  });
+  setupInstanceFilesystem(instance, rawProjectCode || scadCode);
+  instance.FS.writeFile("/input.scad", scadCode);
+  let exitCode = instance.callMain(["--backend=Manifold", "--export-format=binstl", "/input.scad", "-o", "/output.stl"]);
+  let allLogs = logs.join("\n");
+  if (allLogs.includes("Current top level object is not a 3D object")) {
+    const instance2D = await initWasm({
+      ...options,
+      print: text => logs.push(text),
+      printErr: text => logs.push(text)
+    });
+    setupInstanceFilesystem(instance2D, rawProjectCode || scadCode);
+    instance2D.FS.writeFile("/input.scad", "linear_extrude(height = 1, center = true) {\n" + scadCode + "\n}");
+    exitCode = instance2D.callMain(["--backend=Manifold", "--export-format=binstl", "/input.scad", "-o", "/output.stl"]);
+    allLogs = logs.join("\n");
+    try {
+      const bytes2D = instance2D.FS.readFile("/output.stl");
+      return { outBytes: bytes2D, logs, errors, exitCode, allLogs, instance: instance2D };
+    } catch (_) {}
+  }
+  let outBytes = null;
+  try {
+    outBytes = instance.FS.readFile("/output.stl");
+  } catch (_) {}
+  return { outBytes, logs, errors, exitCode, allLogs, instance };
+}
+
 async function createOpenSCAD(options = {}) {
   await getCompiledWasmModule();
   let lastInstance = null;
   return {
     async renderToBinaryStlBase64(code) {
-      const logs = [];
-      const errors = [];
-      const instance = await initWasm({
-        ...options,
-        print: text => {
-          logs.push(text);
-          if (options.print) options.print(text);
-          else console.log("[OpenSCAD]:", text);
-        },
-        printErr: text => {
-          logs.push(text);
-          if (text.includes("ERROR:") || text.includes("Can't parse file")) {
-            errors.push(text);
-          }
-          if (options.printErr) options.printErr(text);
-          else console.log("[OpenSCAD]:", text);
-        }
-      });
-      lastInstance = instance;
-      setupInstanceFilesystem(instance, code);
       const preparedCode = prepareScadForManifold(code);
-      instance.FS.writeFile("/input.scad", preparedCode);
-      const exitCode = instance.callMain(["--backend=Manifold", "--export-format=binstl", "/input.scad", "-o", "/output.stl"]);
-      const allLogs = logs.join("\n");
-      if (allLogs.includes("Current top level object is empty")) {
+      const mainRes = await runSingleBinstlRender(preparedCode, code, options, true);
+      lastInstance = mainRes.instance;
+
+      const hasHash = hasScadModifier(code, '#');
+      const hasPct = hasScadModifier(code, '%');
+      const hasBang = hasScadModifier(code, '!');
+
+      let highlightBytes = null;
+      let backgroundBytes = null;
+
+      if ((hasHash || hasPct) && !hasBang) {
+        try {
+          const csgInst = await initWasm({
+            ...options,
+            print: () => {},
+            printErr: () => {}
+          });
+          setupInstanceFilesystem(csgInst, code);
+          csgInst.FS.writeFile("/raw.scad", code);
+          csgInst.callMain(["--backend=Manifold", "/raw.scad", "-o", "/output.csg"]);
+          const csgText = csgInst.FS.readFile("/output.csg", { encoding: "utf8" });
+          if (hasHash) {
+            const hashCsg = extractModifiedCsg(csgText, '#');
+            if (hashCsg && hashCsg.trim().length > 0) {
+              const hashPrepared = prepareScadForManifold(hashCsg);
+              const hRes = await runSingleBinstlRender(hashPrepared, code, options, false);
+              highlightBytes = hRes.outBytes;
+            }
+          }
+          if (hasPct) {
+            const pctCsg = extractModifiedCsg(csgText, '%');
+            if (pctCsg && pctCsg.trim().length > 0) {
+              const pctPrepared = prepareScadForManifold(pctCsg);
+              const pRes = await runSingleBinstlRender(pctPrepared, code, options, false);
+              backgroundBytes = pRes.outBytes;
+            }
+          }
+        } catch (modErr) {
+          console.warn("[OpenSCAD Modifier Pass Warning]:", modErr);
+        }
+      }
+
+      const combined = combineStlBuffers(mainRes.outBytes, highlightBytes, backgroundBytes);
+      if (!combined) {
+        if (mainRes.allLogs.includes("Current top level object is empty")) {
+          return "";
+        }
+        if (mainRes.errors.length > 0) {
+          throw new Error(mainRes.errors.join("\n"));
+        }
+        if (!mainRes.outBytes) {
+          throw new Error("OpenSCAD erzeugte keine Ausgabedatei (Exit-Code " + mainRes.exitCode + "). Log: " + mainRes.allLogs);
+        }
         return "";
       }
-      let outBytes = null;
-      try {
-        outBytes = instance.FS.readFile("/output.stl");
-      } catch (readErr) {
-        if (errors.length > 0) {
-          throw new Error(errors.join("\n"));
-        }
-        throw new Error("OpenSCAD erzeugte keine Ausgabedatei (Exit-Code " + exitCode + "). Log: " + allLogs);
-      }
-      if (!outBytes || outBytes.length < 84) {
-        if (errors.length > 0) {
-          throw new Error(errors.join("\n"));
-        }
-        return "";
-      }
-      return uint8ArrayToBase64(outBytes);
+      return uint8ArrayToBase64(combined);
     },
     async renderToStl(code) {
       const instance = await initWasm(options);

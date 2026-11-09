@@ -149,7 +149,31 @@ class ScadGlRenderer : GLSurfaceView.Renderer {
         GLES30.glVertexAttribPointer(2, 4, GLES30.GL_FLOAT, false, 0, mesh.colorBuffer)
         GLES30.glEnableVertexAttribArray(2)
 
-        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, mesh.vertexCount)
+        // 1. Opaque Pass (Normale CSG-Geometrie)
+        if (mesh.opaqueVertexCount > 0) {
+            GLES30.glDisable(GLES30.GL_BLEND)
+            GLES30.glDepthMask(true)
+            GLES30.glEnable(GLES30.GL_CULL_FACE)
+            GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, mesh.opaqueVertexCount)
+        }
+
+        // 2. Transparent Overlay Pass ('#' Highlight/Debug & '%' Background Modifier)
+        val overlayCount = mesh.vertexCount - mesh.opaqueVertexCount
+        if (overlayCount > 0) {
+            GLES30.glEnable(GLES30.GL_BLEND)
+            GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+            GLES30.glEnable(GLES30.GL_POLYGON_OFFSET_FILL)
+            GLES30.glPolygonOffset(-1.5f, -1.5f)
+            GLES30.glDepthMask(false)
+            GLES30.glDisable(GLES30.GL_CULL_FACE)
+
+            GLES30.glDrawArrays(GLES30.GL_TRIANGLES, mesh.opaqueVertexCount, overlayCount)
+
+            GLES30.glDepthMask(true)
+            GLES30.glDisable(GLES30.GL_POLYGON_OFFSET_FILL)
+            GLES30.glDisable(GLES30.GL_BLEND)
+            GLES30.glEnable(GLES30.GL_CULL_FACE)
+        }
 
         GLES30.glDisableVertexAttribArray(0)
         GLES30.glDisableVertexAttribArray(1)
@@ -255,17 +279,18 @@ class ScadGlRenderer : GLSurfaceView.Renderer {
             in vec4 vColor;
             out vec4 fragColor;
             void main() {
+                vec3 n = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
                 vec3 ambient = 0.38 * vColor.rgb;
                 vec3 lightDir1 = normalize(vec3(0.5, -0.6, 1.0));
-                float diff1 = max(dot(vNormal, lightDir1), 0.0);
+                float diff1 = max(dot(n, lightDir1), 0.0);
                 vec3 diffuse1 = diff1 * vColor.rgb * 0.65;
                 
                 vec3 lightDir2 = normalize(vec3(-0.6, 0.5, 0.4));
-                float diff2 = max(dot(vNormal, lightDir2), 0.0);
+                float diff2 = max(dot(n, lightDir2), 0.0);
                 vec3 diffuse2 = diff2 * vColor.rgb * 0.25;
 
                 vec3 finalColor = ambient + diffuse1 + diffuse2;
-                fragColor = vec4(finalColor, 1.0);
+                fragColor = vec4(finalColor, vColor.a);
             }
         """.trimIndent()
 

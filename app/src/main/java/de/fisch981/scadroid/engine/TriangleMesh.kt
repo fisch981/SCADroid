@@ -15,7 +15,8 @@ class TriangleMesh(
     val vertexCount: Int,
     val triangleCount: Int,
     val minBound: Vector3,
-    val maxBound: Vector3
+    val maxBound: Vector3,
+    val opaqueVertexCount: Int = vertexCount
 ) {
     val center: Vector3 = (minBound + maxBound) * 0.5f
     val boundingRadius: Float = max((maxBound - minBound).length() * 0.5f, 10f)
@@ -28,8 +29,9 @@ class TriangleMesh(
         "SCADroid Mobile OpenSCAD Exporter".toByteArray().copyInto(header)
         out.write(header)
 
+        val exportTriCount = if (opaqueVertexCount >= 3) opaqueVertexCount / 3 else triangleCount
         val countBuf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
-        countBuf.putInt(triangleCount)
+        countBuf.putInt(exportTriCount)
         out.write(countBuf.array())
 
         val vBuf = vertexBuffer.duplicate()
@@ -38,7 +40,7 @@ class TriangleMesh(
         nBuf.position(0)
 
         val triBuf = ByteBuffer.allocate(50).order(ByteOrder.LITTLE_ENDIAN)
-        for (i in 0 until triangleCount) {
+        for (i in 0 until exportTriCount) {
             triBuf.clear()
             // Normal
             val nx = if (nBuf.hasRemaining()) nBuf.get() else 0f
@@ -95,6 +97,7 @@ class TriangleMesh(
             var maxZ = -Float.MAX_VALUE
 
             var offset = 84
+            var opaqueVerts = 0
             for (i in 0 until triCount) {
                 var nx = buf.getFloat(offset)
                 var ny = buf.getFloat(offset + 4)
@@ -111,6 +114,26 @@ class TriangleMesh(
                 val x2 = buf.getFloat(offset + 36)
                 val y2 = buf.getFloat(offset + 40)
                 val z2 = buf.getFloat(offset + 44)
+
+                val attr = buf.getShort(offset + 48).toInt() and 0xFFFF
+                val r: Float
+                val g: Float
+                val b: Float
+                val a: Float
+                when (attr) {
+                    1 -> {
+                        // OpenSCAD '#' Highlight / Debug Modifier (Transparentes Rot/Pink)
+                        r = 1.0f; g = 0.31f; b = 0.31f; a = 0.60f
+                    }
+                    2 -> {
+                        // OpenSCAD '%' Background / Transparent Modifier (Transparentes Grau)
+                        r = 0.70f; g = 0.70f; b = 0.72f; a = 0.45f
+                    }
+                    else -> {
+                        r = color.x; g = color.y; b = color.z; a = 1.0f
+                        opaqueVerts += 3
+                    }
+                }
 
                 if (nx * nx + ny * ny + nz * nz < 1e-6f) {
                     val ux = x1 - x0
@@ -135,7 +158,7 @@ class TriangleMesh(
                 // Vertex 0
                 vBuf.put(x0); vBuf.put(y0); vBuf.put(z0)
                 nBuf.put(nx); nBuf.put(ny); nBuf.put(nz)
-                cBuf.put(color.x); cBuf.put(color.y); cBuf.put(color.z); cBuf.put(1.0f)
+                cBuf.put(r); cBuf.put(g); cBuf.put(b); cBuf.put(a)
                 if (x0 < minX) minX = x0; if (x0 > maxX) maxX = x0
                 if (y0 < minY) minY = y0; if (y0 > maxY) maxY = y0
                 if (z0 < minZ) minZ = z0; if (z0 > maxZ) maxZ = z0
@@ -143,7 +166,7 @@ class TriangleMesh(
                 // Vertex 1
                 vBuf.put(x1); vBuf.put(y1); vBuf.put(z1)
                 nBuf.put(nx); nBuf.put(ny); nBuf.put(nz)
-                cBuf.put(color.x); cBuf.put(color.y); cBuf.put(color.z); cBuf.put(1.0f)
+                cBuf.put(r); cBuf.put(g); cBuf.put(b); cBuf.put(a)
                 if (x1 < minX) minX = x1; if (x1 > maxX) maxX = x1
                 if (y1 < minY) minY = y1; if (y1 > maxY) maxY = y1
                 if (z1 < minZ) minZ = z1; if (z1 > maxZ) maxZ = z1
@@ -151,7 +174,7 @@ class TriangleMesh(
                 // Vertex 2
                 vBuf.put(x2); vBuf.put(y2); vBuf.put(z2)
                 nBuf.put(nx); nBuf.put(ny); nBuf.put(nz)
-                cBuf.put(color.x); cBuf.put(color.y); cBuf.put(color.z); cBuf.put(1.0f)
+                cBuf.put(r); cBuf.put(g); cBuf.put(b); cBuf.put(a)
                 if (x2 < minX) minX = x2; if (x2 > maxX) maxX = x2
                 if (y2 < minY) minY = y2; if (y2 > maxY) maxY = y2
                 if (z2 < minZ) minZ = z2; if (z2 > maxZ) maxZ = z2
@@ -170,7 +193,8 @@ class TriangleMesh(
                 vertexCount = totalVertices,
                 triangleCount = triCount,
                 minBound = Vector3(minX, minY, minZ),
-                maxBound = Vector3(maxX, maxY, maxZ)
+                maxBound = Vector3(maxX, maxY, maxZ),
+                opaqueVertexCount = opaqueVerts
             )
         }
 

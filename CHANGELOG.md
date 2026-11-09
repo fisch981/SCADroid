@@ -6,6 +6,11 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ---
 
+## [0.1.22] - 2026-11-09
+
+### Geändert / Hinzugefügt
+- Support OpenSCAD # highlight/debug, % background, ! root, and * disable modifiers in 3D viewport
+
 ## [0.1.21] - 2026-11-06
 
 ### Geändert / Hinzugefügt
