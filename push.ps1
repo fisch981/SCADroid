@@ -59,12 +59,13 @@ $newEntry = @"
 
 "@
 
-$existingChangelog = Get-Content $changelogFile -Raw
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+$existingChangelog = [System.IO.File]::ReadAllText($changelogFile, [System.Text.Encoding]::UTF8)
 # Nach dem Header einfügen
 if ($existingChangelog -match '(?s)(# Changelog.*?---\s*\r?\n\r?\n)(.*)') {
     $updatedChangelog = $matches[1] + $newEntry + "`n" + $matches[2]
-    Set-Content -Path $changelogFile -Value $updatedChangelog -NoNewline
-    Write-Host "==> Zweisprachiger Changelog für v$newName aktualisiert" -ForegroundColor Cyan
+    [System.IO.File]::WriteAllText($changelogFile, $updatedChangelog, $utf8NoBom)
+    Write-Host "==> Zweisprachiger Changelog für v$newName aktualisiert (UTF-8 ohne BOM)" -ForegroundColor Cyan
 }
 
 # 3. Release APK kompilieren

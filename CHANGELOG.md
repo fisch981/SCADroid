@@ -12,7 +12,7 @@ Dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/) und dem 
 
 ### Geändert & Hinzugefügt / Changed & Added
 - **DE:** Vollstaendige Unterstuetzung fuer use <...>, include <...>, import(...) und surface(...) inkl. rekursiver Abhaengigkeiten und gebuendelter MCAD-Standardbibliothek
-- **EN:** Vollstaendige Unterstuetzung fuer use <...>, include <...>, import(...) und surface(...) inkl. rekursiver Abhaengigkeiten und gebuendelter MCAD-Standardbibliothek
+- **EN:** Full support for `use <...>`, `include <...>`, `import(...)`, and `surface(...)` including recursive dependencies and bundled official OpenSCAD MCAD library
 
 ## [0.1.26] - 2026-11-10
 
@@ -23,7 +23,7 @@ Dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/) und dem 
 ## [0.1.25] - 2026-11-10
 
 ### Geändert & Hinzugefügt / Changed & Added
-- **DE:** Zweisprachige In-App-Unterst�tzung (DE/EN) mit Umschaltung und Ger�tesprachen-Standard
+- **DE:** Zweisprachige In-App-Unterstützung (DE/EN) mit Umschaltung und Gerätesprachen-Standard
 - **EN:** Bilingual in-app support (DE/EN) with language switcher and device default
 
 ## [0.1.24] - 2026-11-10
