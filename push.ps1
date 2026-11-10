@@ -78,7 +78,7 @@ if (-not $env:JAVA_HOME -or -not (Test-Path $env:JAVA_HOME)) {
 Remove-Item "SCADroid-release.apk" -ErrorAction SilentlyContinue
 Remove-Item "SCADroid-v*.apk" -ErrorAction SilentlyContinue
 
-& ".\gradlew.bat" copyReleaseApkToRoot
+& ".\gradlew.bat" clean copyReleaseApkToRoot
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Gradle Build ist fehlgeschlagen (Exit Code $LASTEXITCODE)!"
 }

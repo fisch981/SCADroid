@@ -114,6 +114,28 @@ fun SCADroidApp(
 
     val strings = LanguageManager.resolveStrings(currentLanguage)
 
+    val (versionName, versionCode) = remember(context) {
+        try {
+            val pm = context.packageManager
+            val pkgInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(context.packageName, 0)
+            }
+            val name = pkgInfo.versionName ?: de.fisch981.scadroid.BuildConfig.VERSION_NAME
+            val code = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                pkgInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                pkgInfo.versionCode.toLong()
+            }
+            Pair(name, code)
+        } catch (_: Exception) {
+            Pair(de.fisch981.scadroid.BuildConfig.VERSION_NAME, de.fisch981.scadroid.BuildConfig.VERSION_CODE.toLong())
+        }
+    }
+
     CompositionLocalProvider(LocalStrings provides strings) {
     LaunchedEffect(statusMessage) {
         statusMessage?.let {
@@ -289,7 +311,7 @@ fun SCADroidApp(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        text = "${strings.version} ${de.fisch981.scadroid.BuildConfig.VERSION_NAME} (${strings.build} ${de.fisch981.scadroid.BuildConfig.VERSION_CODE})",
+                                        text = "${strings.version} $versionName (${strings.build} $versionCode)",
                                         color = Color(0xFF888888),
                                         style = MaterialTheme.typography.labelSmall
                                     )

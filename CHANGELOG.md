@@ -8,6 +8,12 @@ Dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/) und dem 
 
 ---
 
+## [0.1.26] - 2026-11-10
+
+### Geändert & Hinzugefügt / Changed & Added
+- **DE:** Dynamische Versionsauslesung via PackageManager zur Laufzeit & sauberer Clean-Build-Workflow
+- **EN:** Dynamic runtime version resolution via PackageManager and clean-build release workflow
+
 ## [0.1.25] - 2026-11-10
 
 ### Geändert & Hinzugefügt / Changed & Added
