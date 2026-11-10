@@ -1,10 +1,16 @@
 param (
     [Alias("Message")]
     [string]$ChangeSummary = "Automatisches Update",
+    [Alias("MessageEn")]
+    [string]$ChangeSummaryEn = "",
     [string]$BumpType = "patch" # patch, minor, major
 )
 
 $ErrorActionPreference = "Stop"
+
+# Falls keine englische Nachricht angegeben wurde, Fallback vorbereiten
+$summaryDe = $ChangeSummary
+$summaryEn = if ($ChangeSummaryEn -and $ChangeSummaryEn.Trim() -ne "") { $ChangeSummaryEn } else { $ChangeSummary }
 
 # 1. Versionierung in app/build.gradle.kts auslesen & inkrementieren
 $gradleFile = "app/build.gradle.kts"
@@ -41,14 +47,15 @@ $content = $content -replace 'versionCode\s*=\s*\d+', "versionCode = $newCode"
 $content = $content -replace 'versionName\s*=\s*"[^"]+"', "versionName = `"$newName`""
 Set-Content -Path $gradleFile -Value $content -NoNewline
 
-# 2. CHANGELOG.md aktualisieren
+# 2. CHANGELOG.md aktualisieren (zweisprachig: DE & EN)
 $changelogFile = "CHANGELOG.md"
 $today = (Get-Date).ToString("yyyy-MM-dd")
 $newEntry = @"
 ## [$newName] - $today
 
-### Geändert / Hinzugefügt
-- $ChangeSummary
+### Geändert & Hinzugefügt / Changed & Added
+- **DE:** $summaryDe
+- **EN:** $summaryEn
 
 "@
 
@@ -57,7 +64,7 @@ $existingChangelog = Get-Content $changelogFile -Raw
 if ($existingChangelog -match '(?s)(# Changelog.*?---\s*\r?\n\r?\n)(.*)') {
     $updatedChangelog = $matches[1] + $newEntry + "`n" + $matches[2]
     Set-Content -Path $changelogFile -Value $updatedChangelog -NoNewline
-    Write-Host "==> Changelog für v$newName aktualisiert" -ForegroundColor Cyan
+    Write-Host "==> Zweisprachiger Changelog für v$newName aktualisiert" -ForegroundColor Cyan
 }
 
 # 3. Release APK kompilieren
@@ -90,8 +97,9 @@ git push origin main
 
 # 5. GitHub Release erstellen / aktualisieren
 Write-Host "==> Erstelle GitHub Release v$newName..." -ForegroundColor Cyan
+$releaseNotes = if ($summaryDe -ne $summaryEn) { "$summaryDe`n`n$summaryEn" } else { "$summaryDe" }
 try {
-    gh release create "v$newName" "SCADroid-release.apk" --title "SCADroid v$newName" --notes "$ChangeSummary"
+    gh release create "v$newName" "SCADroid-release.apk" --title "SCADroid v$newName" --notes "$releaseNotes"
 } catch {
     Write-Host "Hinweis: GitHub Release existiert bereits oder gh fehlerhaft, versuche Upload..." -ForegroundColor Yellow
     gh release upload "v$newName" "SCADroid-release.apk" --clobber
