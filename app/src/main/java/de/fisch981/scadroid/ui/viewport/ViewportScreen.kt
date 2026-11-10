@@ -42,6 +42,7 @@ import kotlin.math.max
 import de.fisch981.scadroid.engine.ScadGlRenderer
 import de.fisch981.scadroid.engine.TriangleMesh
 import de.fisch981.scadroid.model.RenderState
+import de.fisch981.scadroid.ui.i18n.LocalStrings
 import de.fisch981.scadroid.ui.theme.DarkBorder
 import de.fisch981.scadroid.ui.theme.DarkSurface
 import de.fisch981.scadroid.ui.theme.ScadGold
@@ -52,6 +53,7 @@ fun ViewportScreen(
     mesh: TriangleMesh,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalStrings.current
     val renderer = remember { ScadGlRenderer() }
     val prevCenter = remember { androidx.compose.runtime.mutableStateOf<de.fisch981.scadroid.engine.Vector3?>(null) }
     val prevRadius = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
@@ -173,24 +175,28 @@ fun ViewportScreen(
                         is RenderState.Ready -> {
                             if (mesh.triangleCount == 0) {
                                 Text(
-                                    text = "Modell: Keine Geometrie (Leer)",
+                                    text = strings.viewportEmpty,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color(0xFFB0B0B0)
                                 )
                             } else {
                                 Text(
-                                    text = "Modell: ${mesh.triangleCount} Dreiecke | ${mesh.vertexCount} Vertices",
+                                    text = strings.viewportModelInfo(mesh.triangleCount, mesh.vertexCount),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.White
                                 )
                                 Text(
-                                    text = "Abmessungen: ${(mesh.maxBound.x - mesh.minBound.x).toInt()} × ${(mesh.maxBound.y - mesh.minBound.y).toInt()} × ${(mesh.maxBound.z - mesh.minBound.z).toInt()} mm",
+                                    text = strings.viewportDimensions(
+                                        (mesh.maxBound.x - mesh.minBound.x).toInt(),
+                                        (mesh.maxBound.y - mesh.minBound.y).toInt(),
+                                        (mesh.maxBound.z - mesh.minBound.z).toInt()
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color(0xFFB0B0B0)
                                 )
                             }
                             Text(
-                                text = "Auswertung: ${renderState.evaluationTimeMs} ms",
+                                text = strings.viewportEvalTime(renderState.evaluationTimeMs),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF81C784)
                             )
@@ -212,14 +218,14 @@ fun ViewportScreen(
                         }
                         is RenderState.Error -> {
                             Text(
-                                text = "Fehler: ${renderState.message}",
+                                text = strings.viewportError(renderState.message),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
                         }
                         RenderState.Idle -> {
                             Text(
-                                text = "Tippe oben auf Vorschau oder Render",
+                                text = strings.viewportIdle,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFFAAAAAA)
                             )
@@ -274,7 +280,7 @@ fun ViewportScreen(
                 containerColor = ScadGold,
                 contentColor = Color(0xFF121212)
             ) {
-                Icon(Icons.Default.FitScreen, contentDescription = "Modell zentrieren")
+                Icon(Icons.Default.FitScreen, contentDescription = strings.viewportCenterButton)
             }
         }
     }

@@ -8,6 +8,12 @@ Dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/) und dem 
 
 ---
 
+## [0.1.25] - 2026-11-10
+
+### Geändert & Hinzugefügt / Changed & Added
+- **DE:** Zweisprachige In-App-Unterst�tzung (DE/EN) mit Umschaltung und Ger�tesprachen-Standard
+- **EN:** Bilingual in-app support (DE/EN) with language switcher and device default
+
 ## [0.1.24] - 2026-11-10
 
 ### Geändert & Hinzugefügt / Changed & Added

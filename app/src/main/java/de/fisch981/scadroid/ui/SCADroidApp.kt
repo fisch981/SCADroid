@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RestartAlt
@@ -40,6 +42,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +50,8 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -55,6 +60,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,6 +79,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.fisch981.scadroid.ui.customizer.CustomizerView
 import de.fisch981.scadroid.ui.editor.CodeEditorView
+import de.fisch981.scadroid.ui.i18n.AppLanguage
+import de.fisch981.scadroid.ui.i18n.LanguageManager
+import de.fisch981.scadroid.ui.i18n.LocalStrings
 import de.fisch981.scadroid.ui.theme.ConsoleText
 import de.fisch981.scadroid.ui.theme.DarkBackground
 import de.fisch981.scadroid.ui.theme.DarkBorder
@@ -100,7 +109,12 @@ fun SCADroidApp(
     var menuExpanded by remember { mutableStateOf(false) }
     var showNewProjectConfirmDialog by remember { mutableStateOf(false) }
     var showResetSampleConfirmDialog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
+    var currentLanguage by remember { mutableStateOf(LanguageManager.getSavedLanguage(context)) }
 
+    val strings = LanguageManager.resolveStrings(currentLanguage)
+
+    CompositionLocalProvider(LocalStrings provides strings) {
     LaunchedEffect(statusMessage) {
         statusMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -171,7 +185,7 @@ fun SCADroidApp(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                "Berechne...",
+                                strings.rendering,
                                 color = Color(0xFF121212),
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.labelMedium
@@ -179,13 +193,13 @@ fun SCADroidApp(
                         } else {
                             Icon(
                                 Icons.Default.PlayArrow,
-                                contentDescription = "Render",
+                                contentDescription = strings.render,
                                 tint = Color(0xFF121212),
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                "Render",
+                                strings.render,
                                 color = Color(0xFF121212),
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.labelMedium
@@ -193,7 +207,7 @@ fun SCADroidApp(
                         }
                     }
 
-                    // More Menu (Speichern, STL-Export, Öffnen, etc.)
+                    // More Menu (Speichern, STL-Export, Öffnen, Sprache etc.)
                     Box {
                         IconButton(
                             onClick = { menuExpanded = true },
@@ -201,7 +215,7 @@ fun SCADroidApp(
                         ) {
                             Icon(
                                 Icons.Default.MoreVert,
-                                contentDescription = "Menü",
+                                contentDescription = strings.menu,
                                 tint = Color.White,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -213,7 +227,7 @@ fun SCADroidApp(
                             modifier = Modifier.background(DarkSurface)
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Neues Modell", color = Color.White) },
+                                text = { Text(strings.newModel, color = Color.White) },
                                 leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = ScadGold) },
                                 onClick = {
                                     menuExpanded = false
@@ -221,7 +235,7 @@ fun SCADroidApp(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Datei öffnen...", color = Color.White) },
+                                text = { Text(strings.openFile, color = Color.White) },
                                 leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null, tint = ScadGold) },
                                 onClick = {
                                     menuExpanded = false
@@ -229,7 +243,7 @@ fun SCADroidApp(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Code speichern unter...", color = Color.White) },
+                                text = { Text(strings.saveCodeAs, color = Color.White) },
                                 leadingIcon = { Icon(Icons.Default.SaveAs, contentDescription = null, tint = ScadGold) },
                                 onClick = {
                                     menuExpanded = false
@@ -237,18 +251,18 @@ fun SCADroidApp(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Als STL exportieren...", color = Color.White) },
+                                text = { Text(strings.exportStl, color = Color.White) },
                                 leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null, tint = ScadGold) },
                                 onClick = {
                                     menuExpanded = false
                                     val baseName = if (currentFileName.endsWith(".scad", ignoreCase = true)) {
-                                        currentFileName.substring(0, currentFileName.length - 5)
+                                         currentFileName.substring(0, currentFileName.length - 5)
                                     } else currentFileName
                                     exportStlLauncher.launch("$baseName.stl")
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Beispiel wiederherstellen", color = Color.White) },
+                                text = { Text(strings.restoreSample, color = Color.White) },
                                 leadingIcon = { Icon(Icons.Default.RestartAlt, contentDescription = null, tint = ScadGold) },
                                 onClick = {
                                     menuExpanded = false
@@ -256,18 +270,26 @@ fun SCADroidApp(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Konsole leeren", color = Color.White) },
+                                text = { Text(strings.clearConsole, color = Color.White) },
                                 leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFAAAAAA)) },
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.clearLogs()
                                 }
                             )
-                            androidx.compose.material3.Divider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 4.dp))
+                            DropdownMenuItem(
+                                text = { Text(strings.language, color = Color.White) },
+                                leadingIcon = { Icon(Icons.Default.Language, contentDescription = null, tint = ScadGold) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showLanguageDialog = true
+                                }
+                            )
+                            HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 4.dp))
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        text = "Version ${de.fisch981.scadroid.BuildConfig.VERSION_NAME} (Build ${de.fisch981.scadroid.BuildConfig.VERSION_CODE})",
+                                        text = "${strings.version} ${de.fisch981.scadroid.BuildConfig.VERSION_NAME} (${strings.build} ${de.fisch981.scadroid.BuildConfig.VERSION_CODE})",
                                         color = Color(0xFF888888),
                                         style = MaterialTheme.typography.labelSmall
                                     )
@@ -300,29 +322,29 @@ fun SCADroidApp(
                     NavigationBarItem(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        icon = { Icon(Icons.Default.Code, contentDescription = "Editor") },
-                        label = { Text("Code") },
+                        icon = { Icon(Icons.Default.Code, contentDescription = strings.tabCode) },
+                        label = { Text(strings.tabCode) },
                         colors = navColors
                     )
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Default.ViewInAr, contentDescription = "3D View") },
-                        label = { Text("3D-Ansicht") },
+                        icon = { Icon(Icons.Default.ViewInAr, contentDescription = strings.tab3dView) },
+                        label = { Text(strings.tab3dView) },
                         colors = navColors
                     )
                     NavigationBarItem(
                         selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
-                        icon = { Icon(Icons.Default.Tune, contentDescription = "Customizer") },
-                        label = { Text("Parameter") },
+                        icon = { Icon(Icons.Default.Tune, contentDescription = strings.tabParameters) },
+                        label = { Text(strings.tabParameters) },
                         colors = navColors
                     )
                     NavigationBarItem(
                         selected = selectedTab == 3,
                         onClick = { selectedTab = 3 },
-                        icon = { Icon(Icons.Default.Terminal, contentDescription = "Logs") },
-                        label = { Text("Konsole") },
+                        icon = { Icon(Icons.Default.Terminal, contentDescription = strings.tabConsole) },
+                        label = { Text(strings.tabConsole) },
                         colors = navColors
                     )
                 }
@@ -335,14 +357,14 @@ fun SCADroidApp(
                 onDismissRequest = { showNewProjectConfirmDialog = false },
                 title = {
                     Text(
-                        "Neues Modell erstellen?",
+                        strings.newModelDialogTitle,
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 text = {
                     Text(
-                        "Möchtest du wirklich ein neues Modell erstellen? Der aktuelle Editor-Inhalt wird dabei gelöscht.",
+                        strings.newModelDialogMessage,
                         color = Color(0xFFDDDDDD)
                     )
                 },
@@ -358,14 +380,14 @@ fun SCADroidApp(
                             contentColor = Color.White
                         )
                     ) {
-                        Text("Inhalt löschen & Neu", fontWeight = FontWeight.Bold)
+                        Text(strings.newModelDialogConfirm, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(
                         onClick = { showNewProjectConfirmDialog = false }
                     ) {
-                        Text("Abbrechen", color = Color(0xFFB0B0B0))
+                        Text(strings.cancel, color = Color(0xFFB0B0B0))
                     }
                 },
                 containerColor = DarkSurface,
@@ -379,14 +401,14 @@ fun SCADroidApp(
                 onDismissRequest = { showResetSampleConfirmDialog = false },
                 title = {
                     Text(
-                        "Beispiel laden?",
+                        strings.resetSampleDialogTitle,
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 text = {
                     Text(
-                        "Möchtest du das OpenSCAD-Beispielmodell wiederherstellen? Nicht gespeicherte Änderungen gehen verloren.",
+                        strings.resetSampleDialogMessage,
                         color = Color(0xFFDDDDDD)
                     )
                 },
@@ -402,14 +424,82 @@ fun SCADroidApp(
                             contentColor = Color(0xFF121212)
                         )
                     ) {
-                        Text("Laden", fontWeight = FontWeight.Bold)
+                        Text(strings.resetSampleDialogConfirm, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(
                         onClick = { showResetSampleConfirmDialog = false }
                     ) {
-                        Text("Abbrechen", color = Color(0xFFB0B0B0))
+                        Text(strings.cancel, color = Color(0xFFB0B0B0))
+                    }
+                },
+                containerColor = DarkSurface,
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
+
+        // Dialog: Sprache auswählen (System / DE / EN)
+        if (showLanguageDialog) {
+            AlertDialog(
+                onDismissRequest = { showLanguageDialog = false },
+                title = {
+                    Text(
+                        strings.languageSelectTitle,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AppLanguage.entries.forEach { lang ->
+                            val isSelected = currentLanguage == lang
+                            val label = when (lang) {
+                                AppLanguage.SYSTEM -> "${lang.titleDe} / ${lang.titleEn}"
+                                AppLanguage.GERMAN -> "${lang.titleDe} (${lang.titleEn})"
+                                AppLanguage.ENGLISH -> "${lang.titleEn} (${lang.titleDe})"
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (isSelected) ScadGold.copy(alpha = 0.15f) else Color.Transparent,
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable {
+                                        currentLanguage = lang
+                                        LanguageManager.setSavedLanguage(context, lang)
+                                        showLanguageDialog = false
+                                    }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        currentLanguage = lang
+                                        LanguageManager.setSavedLanguage(context, lang)
+                                        showLanguageDialog = false
+                                    },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = ScadGold,
+                                        unselectedColor = Color(0xFF888888)
+                                    )
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) ScadGold else Color.White,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showLanguageDialog = false }) {
+                        Text(strings.cancel, color = Color(0xFFB0B0B0))
                     }
                 },
                 containerColor = DarkSurface,
@@ -475,7 +565,7 @@ fun SCADroidApp(
                                     Icon(Icons.Default.Terminal, contentDescription = null, tint = ScadGold, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        text = "OPENSCAD TERMINAL & COMPILER OUTPUT",
+                                        text = strings.terminalHeader,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold
@@ -485,7 +575,7 @@ fun SCADroidApp(
                                     onClick = { viewModel.clearLogs() },
                                     modifier = Modifier.size(28.dp)
                                 ) {
-                                    Icon(Icons.Default.DeleteSweep, contentDescription = "Konsole leeren", tint = Color(0xFFAAAAAA))
+                                    Icon(Icons.Default.DeleteSweep, contentDescription = strings.clearConsole, tint = Color(0xFFAAAAAA))
                                 }
                             }
                             Box(
@@ -511,4 +601,5 @@ fun SCADroidApp(
             }
         }
     }
+    } // CompositionLocalProvider
 }

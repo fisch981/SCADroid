@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import de.fisch981.scadroid.model.CustomizerParam
+import de.fisch981.scadroid.ui.i18n.LocalStrings
 import de.fisch981.scadroid.ui.theme.DarkBackground
 import de.fisch981.scadroid.ui.theme.DarkBorder
 import de.fisch981.scadroid.ui.theme.DarkSurface
@@ -46,6 +47,8 @@ fun CustomizerView(
     onParameterChanged: (CustomizerParam) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalStrings.current
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -68,14 +71,14 @@ fun CustomizerView(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "Keine Customizer-Parameter gefunden",
+                            text = strings.customizerNoParams,
                             style = MaterialTheme.typography.titleMedium,
                             color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Definiere Variablen im SCAD-Code wie:\n\n/* [Geometrie] */\nbreite = 30; // [10:1:100]\nhoehe = 15; // [5:1:50]\nmit_bohrung = true;",
+                            text = strings.customizerHint,
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color(0xFFB0B0B0),
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
