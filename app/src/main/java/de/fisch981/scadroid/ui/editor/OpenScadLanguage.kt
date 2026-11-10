@@ -65,6 +65,23 @@ val OPENSCAD_SNIPPETS = listOf(
     ScadSnippet("max", "Maximum zweier Werte", "max()", CompletionItemKind.Function),
     ScadSnippet("pow", "Potenzfunktion (Basis, Exponent)", "pow()", CompletionItemKind.Function),
 
+    // Includes & External Files
+    ScadSnippet("include", "Datei oder Bibliothek einbinden (alles importieren)", "include <filename.scad>;", CompletionItemKind.Keyword),
+    ScadSnippet("use", "Module/Funktionen aus Datei einbinden", "use <filename.scad>;", CompletionItemKind.Keyword),
+    ScadSnippet("use_mcad_boxes", "MCAD Standardbibliothek (boxes.scad)", "use <MCAD/boxes.scad>;", CompletionItemKind.Snippet),
+    ScadSnippet("import", "3D/2D-Datei importieren (STL, DXF, SVG, 3MF)", "import(\"model.stl\");", CompletionItemKind.Function),
+    ScadSnippet("surface", "Höhenfeld/Oberfläche aus Bild oder DAT-Datei", "surface(file = \"surface.png\", center = true);", CompletionItemKind.Function),
+
+    // Advanced 3D & 2D
+    ScadSnippet("polyhedron", "Benutzerdefiniertes Polyeder aus Punkten und Flächen", "polyhedron(\n    points = [[0,0,0], [10,0,0], [0,10,0], [0,0,10]],\n    faces = [[0,1,2], [0,2,3], [0,3,1], [1,3,2]]\n);", CompletionItemKind.Function),
+    ScadSnippet("text", "2D Text erstellen", "text(\"Text\", size = 10, halign = \"center\", valign = \"center\");", CompletionItemKind.Function),
+    ScadSnippet("offset", "2D Kontur vergrößern / abrunden / anfasen", "offset(r = 2) ", CompletionItemKind.Function),
+    ScadSnippet("projection", "3D Geometrie auf 2D Ebene projizieren", "projection(cut = false) ", CompletionItemKind.Function),
+    ScadSnippet("render", "Teilbaum explizit als CSG-Mesh vorberechnen", "render() ", CompletionItemKind.Function),
+    ScadSnippet("intersection_for", "Schnittmenge über Schleifen-Objekte", "intersection_for (i = [0:3]) {\n    \n}", CompletionItemKind.Snippet),
+    ScadSnippet("echo", "Ausgabe auf der Konsole", "echo(\"Wert:\", x);", CompletionItemKind.Function),
+    ScadSnippet("assert", "Bedingung prüfen (Fehler bei false)", "assert(x > 0, \"x muss positiv sein\");", CompletionItemKind.Function),
+
     // Special Variables
     ScadSnippet("\$fn", "Fragment-Anzahl (Kreisauflösung)", "\$fn = 32;", CompletionItemKind.Variable),
     ScadSnippet("\$fa", "Minimaler Fragment-Winkel", "\$fa = 12;", CompletionItemKind.Variable),

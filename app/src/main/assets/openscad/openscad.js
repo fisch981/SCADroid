@@ -5488,9 +5488,43 @@ function prepareScadForManifold(code) {
 
 var FONTS_CONF_XML = '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n  <dir>/fonts</dir>\n  <alias><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>\n  <alias><family>Helvetica</family><prefer><family>Liberation Sans</family></prefer></alias>\n  <alias><family>sans-serif</family><prefer><family>Liberation Sans</family></prefer></alias>\n</fontconfig>';
 
+function extractReferencedFiles(code) {
+  var files = [];
+  var patterns = [
+    /\b(?:include|use)\s*<([^>]+)>/g,
+    /\b(?:include|use)\s*"([^"]+)"/g,
+    /\bimport(?:_stl|_dxf)?\s*\(\s*(?:file\s*=\s*)?"([^"]+)"/g,
+    /\bsurface\s*\(\s*(?:file\s*=\s*)?"([^"]+)"/g
+  ];
+  for (var p = 0; p < patterns.length; p++) {
+    var regex = patterns[p];
+    var m;
+    while ((m = regex.exec(code)) !== null) {
+      if (m[1] && files.indexOf(m[1].trim()) === -1) {
+        files.push(m[1].trim());
+      }
+    }
+  }
+  return files;
+}
+
+function ensureFsDirectory(fsInst, filePath) {
+  var parts = filePath.split('/');
+  parts.pop();
+  var cur = '';
+  for (var i = 0; i < parts.length; i++) {
+    if (!parts[i]) continue;
+    cur += '/' + parts[i];
+    try { fsInst.mkdir(cur); } catch (_) {}
+  }
+}
+
 function setupInstanceFilesystem(instance, scadCode) {
   try {
     try { instance.FS.mkdir("/fonts"); } catch (e) {}
+    try { instance.FS.mkdir("/libraries"); } catch (e) {}
+    try { instance.FS.mkdir("/libraries/MCAD"); } catch (e) {}
+    try { instance.FS.mkdir("/MCAD"); } catch (e) {}
     instance.FS.writeFile("/fonts/fonts.conf", FONTS_CONF_XML);
     if (!globalThis._cachedFontBytes && globalThis.AndroidBridge && typeof globalThis.AndroidBridge.getFontBase64 === "function") {
       var fontB64 = globalThis.AndroidBridge.getFontBase64();
@@ -5502,14 +5536,44 @@ function setupInstanceFilesystem(instance, scadCode) {
       instance.FS.writeFile("/fonts/LiberationSans-Regular.ttf", globalThis._cachedFontBytes);
     }
     if (globalThis.AndroidBridge && typeof globalThis.AndroidBridge.getProjectFileBase64 === "function") {
-      var importRegex = /\bimport\s*\(\s*(?:file\s*=\s*)?"([^"]+)"/g;
-      var m;
-      while ((m = importRegex.exec(scadCode)) !== null) {
-        var fname = m[1];
-        var fileB64 = globalThis.AndroidBridge.getProjectFileBase64(fname);
+      var loadedFiles = new Set();
+      var pendingQueue = extractReferencedFiles(scadCode);
+      var maxFiles = 100;
+
+      while (pendingQueue.length > 0 && maxFiles-- > 0) {
+        var rawPath = pendingQueue.shift();
+        if (loadedFiles.has(rawPath)) continue;
+        loadedFiles.add(rawPath);
+
+        var fileB64 = globalThis.AndroidBridge.getProjectFileBase64(rawPath);
         if (fileB64 && fileB64.length > 0) {
-          var cleanName = fname.replace(/^\/+/, "");
-          instance.FS.writeFile("/" + cleanName, base64ToUint8Array(fileB64));
+          var fileBytes = base64ToUint8Array(fileB64);
+          var cleanName = rawPath.replace(/^\/+/, "");
+          ensureFsDirectory(instance.FS, cleanName);
+          instance.FS.writeFile("/" + cleanName, fileBytes);
+
+          if (cleanName.startsWith("MCAD/")) {
+            var sub = cleanName.slice(5);
+            ensureFsDirectory(instance.FS, "libraries/MCAD/" + sub);
+            try { instance.FS.writeFile("/libraries/" + cleanName, fileBytes); } catch (_) {}
+          } else if (cleanName.endsWith(".scad")) {
+            ensureFsDirectory(instance.FS, "MCAD/" + cleanName);
+            ensureFsDirectory(instance.FS, "libraries/MCAD/" + cleanName);
+            try { instance.FS.writeFile("/MCAD/" + cleanName, fileBytes); } catch (_) {}
+            try { instance.FS.writeFile("/libraries/MCAD/" + cleanName, fileBytes); } catch (_) {}
+          }
+
+          if (cleanName.endsWith(".scad")) {
+            try {
+              var text = new TextDecoder("utf-8").decode(fileBytes);
+              var subRefs = extractReferencedFiles(text);
+              for (var s = 0; s < subRefs.length; s++) {
+                if (!loadedFiles.has(subRefs[s])) {
+                  pendingQueue.push(subRefs[s]);
+                }
+              }
+            } catch (_) {}
+          }
         }
       }
     }

@@ -173,18 +173,44 @@ class OpenScadWasmEngine(
         @JavascriptInterface
         fun getProjectFileBase64(fileName: String): String {
             return try {
-                val cleanName = fileName.substringAfterLast('/').substringAfterLast('\\')
-                val direct = File(context.filesDir, cleanName)
-                val target = if (direct.exists()) {
-                    direct
-                } else {
-                    context.filesDir.listFiles()?.firstOrNull { it.name.equals(cleanName, ignoreCase = true) }
+                val normalized = fileName.replace('\\', '/').trim().trimStart('/')
+                val leafName = normalized.substringAfterLast('/')
+
+                // 1. Zunächst in den gebündelten OpenSCAD-Standardbibliotheken (z.B. MCAD) suchen
+                val assetCandidates = listOf(
+                    "openscad/libraries/$normalized",
+                    "openscad/libraries/MCAD/$normalized",
+                    "openscad/libraries/MCAD/$leafName",
+                    "openscad/$normalized",
+                    normalized
+                )
+                for (assetPath in assetCandidates) {
+                    try {
+                        val bytes = context.assets.open(assetPath).use { it.readBytes() }
+                        if (bytes.isNotEmpty()) {
+                            return Base64.encodeToString(bytes, Base64.NO_WRAP)
+                        }
+                    } catch (_: Exception) {}
                 }
-                if (target != null && target.exists() && target.isFile) {
-                    Base64.encodeToString(target.readBytes(), Base64.NO_WRAP)
-                } else {
-                    ""
+
+                // 2. Im lokalen App-Projektverzeichnis suchen
+                val direct = File(context.filesDir, normalized)
+                if (direct.exists() && direct.isFile) {
+                    return Base64.encodeToString(direct.readBytes(), Base64.NO_WRAP)
                 }
+
+                val directLeaf = File(context.filesDir, leafName)
+                if (directLeaf.exists() && directLeaf.isFile) {
+                    return Base64.encodeToString(directLeaf.readBytes(), Base64.NO_WRAP)
+                }
+
+                // 3. Rekursive Suche in filesDir
+                val found = context.filesDir.walkTopDown().firstOrNull { it.isFile && it.name.equals(leafName, ignoreCase = true) }
+                if (found != null && found.isFile) {
+                    return Base64.encodeToString(found.readBytes(), Base64.NO_WRAP)
+                }
+
+                ""
             } catch (e: Exception) {
                 Log.w(tag, "Fehler beim Laden der Projektdatei '$fileName': ${e.message}")
                 ""

@@ -252,19 +252,35 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val fileName = resolveDisplayName(uri, contentResolver, "modell.scad")
-                if (fileName.endsWith(".stl", ignoreCase = true)) {
+                val isCompanionAsset = fileName.endsWith(".stl", ignoreCase = true) ||
+                        fileName.endsWith(".dxf", ignoreCase = true) ||
+                        fileName.endsWith(".svg", ignoreCase = true) ||
+                        fileName.endsWith(".png", ignoreCase = true) ||
+                        fileName.endsWith(".dat", ignoreCase = true) ||
+                        fileName.endsWith(".3mf", ignoreCase = true) ||
+                        fileName.endsWith(".obj", ignoreCase = true)
+
+                if (isCompanionAsset) {
                     val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
                     val destFile = File(getApplication<Application>().filesDir, fileName)
                     destFile.writeBytes(bytes)
                     withContext(Dispatchers.Main) {
-                        appendLog("STL-Datei '$fileName' (${bytes.size} Bytes) für import(\"$fileName\") im Projektverzeichnis bereitgestellt.")
-                        _statusMessage.value = "'$fileName' für import() bereitgestellt"
+                        appendLog("Datei '$fileName' (${bytes.size} Bytes) für import()/surface() im Projektverzeichnis bereitgestellt.")
+                        _statusMessage.value = "'$fileName' bereitgestellt"
                         evaluateInternal()
                     }
                     return@launch
                 }
+
                 val inputStream = contentResolver.openInputStream(uri)
                 val loadedCode = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
+
+                // Auch als benannte .scad-Datei in filesDir ablegen, damit andere Dateien per use <...> oder include <...> darauf zugreifen können
+                try {
+                    val companionScad = File(getApplication<Application>().filesDir, fileName)
+                    companionScad.writeText(loadedCode)
+                } catch (_: Exception) {}
+
                 withContext(Dispatchers.Main) {
                     paramOverrides.clear()
                     paramBoundsCache.clear()
