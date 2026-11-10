@@ -8,6 +8,12 @@ Dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/) und dem 
 
 ---
 
+## [0.1.28] - 2026-11-10
+
+### Geändert & Hinzugefügt / Changed & Added
+- **DE:** Geteilte Tablet-Ansicht entfernt: Einheitliche Vollbild-Tab-Navigation (Code, 3D-Ansicht, Customizer, Konsole) mit permanenter Navigationsleiste auf allen Bildschirmgrößen
+- **EN:** Remove split tablet view: Unified full-screen tab navigation (Code, 3D View, Customizer, Console) with persistent bottom navigation bar across all screen sizes
+
 ## [0.1.27] - 2026-11-10
 
 ### Geändert & Hinzugefügt / Changed & Added

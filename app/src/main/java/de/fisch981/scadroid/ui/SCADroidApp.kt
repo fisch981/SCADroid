@@ -71,7 +71,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -162,9 +161,6 @@ fun SCADroidApp(
     ) { uri ->
         uri?.let { viewModel.exportStlToUri(it, context.contentResolver) }
     }
-
-    val configuration = LocalConfiguration.current
-    val isTabletOrLandscape = configuration.screenWidthDp >= 600
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Editor, 1: 3D-View, 2: Customizer, 3: Konsole
 
@@ -328,48 +324,46 @@ fun SCADroidApp(
             )
         },
         bottomBar = {
-            if (!isTabletOrLandscape) {
-                NavigationBar(
-                    containerColor = Color(0xFF16181D),
-                    contentColor = Color.White
-                ) {
-                    val navColors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFF121212),
-                        selectedTextColor = ScadGold,
-                        indicatorColor = ScadGold,
-                        unselectedIconColor = Color(0xFFAAAAAA),
-                        unselectedTextColor = Color(0xFFAAAAAA)
-                    )
+            NavigationBar(
+                containerColor = Color(0xFF16181D),
+                contentColor = Color.White
+            ) {
+                val navColors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = Color(0xFF121212),
+                    selectedTextColor = ScadGold,
+                    indicatorColor = ScadGold,
+                    unselectedIconColor = Color(0xFFAAAAAA),
+                    unselectedTextColor = Color(0xFFAAAAAA)
+                )
 
-                    NavigationBarItem(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        icon = { Icon(Icons.Default.Code, contentDescription = strings.tabCode) },
-                        label = { Text(strings.tabCode) },
-                        colors = navColors
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Default.ViewInAr, contentDescription = strings.tab3dView) },
-                        label = { Text(strings.tab3dView) },
-                        colors = navColors
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        icon = { Icon(Icons.Default.Tune, contentDescription = strings.tabParameters) },
-                        label = { Text(strings.tabParameters) },
-                        colors = navColors
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
-                        icon = { Icon(Icons.Default.Terminal, contentDescription = strings.tabConsole) },
-                        label = { Text(strings.tabConsole) },
-                        colors = navColors
-                    )
-                }
+                NavigationBarItem(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    icon = { Icon(Icons.Default.Code, contentDescription = strings.tabCode) },
+                    label = { Text(strings.tabCode) },
+                    colors = navColors
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    icon = { Icon(Icons.Default.ViewInAr, contentDescription = strings.tab3dView) },
+                    label = { Text(strings.tab3dView) },
+                    colors = navColors
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    icon = { Icon(Icons.Default.Tune, contentDescription = strings.tabParameters) },
+                    label = { Text(strings.tabParameters) },
+                    colors = navColors
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    icon = { Icon(Icons.Default.Terminal, contentDescription = strings.tabConsole) },
+                    label = { Text(strings.tabConsole) },
+                    colors = navColors
+                )
             }
         }
     ) { innerPadding ->
@@ -535,88 +529,69 @@ fun SCADroidApp(
                 .background(DarkBackground)
                 .padding(innerPadding)
         ) {
-            if (isTabletOrLandscape) {
-                // Adaptive Split Screen: Editor links, Viewport rechts
-                Row(modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        CodeEditorView(
-                            code = code,
-                            onCodeChange = { viewModel.updateCode(it) }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        ViewportScreen(
-                            renderState = renderState,
-                            mesh = currentMesh
-                        )
-                    }
-                }
-            } else {
-                // Phone Screen: Tab-Navigation
-                when (selectedTab) {
-                    0 -> CodeEditorView(
-                        code = code,
-                        onCodeChange = { viewModel.updateCode(it) }
-                    )
-                    1 -> ViewportScreen(
-                        renderState = renderState,
-                        mesh = currentMesh
-                    )
-                    2 -> CustomizerView(
-                        parameters = customizerParams,
-                        onParameterChanged = { viewModel.updateParameter(it) }
-                    )
-                    3 -> {
-                        // Professionelles Dark Terminal für Logs und Ausgaben
-                        val scrollState = rememberScrollState()
-                        Column(
+            when (selectedTab) {
+                0 -> CodeEditorView(
+                    code = code,
+                    onCodeChange = { viewModel.updateCode(it) }
+                )
+                1 -> ViewportScreen(
+                    renderState = renderState,
+                    mesh = currentMesh
+                )
+                2 -> CustomizerView(
+                    parameters = customizerParams,
+                    onParameterChanged = { viewModel.updateParameter(it) }
+                )
+                3 -> {
+                    // Professionelles Dark Terminal für Logs und Ausgaben
+                    val scrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF0D0F12))
+                            .padding(12.dp)
+                    ) {
+                        Row(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0xFF0D0F12))
-                                .padding(12.dp)
+                                .fillMaxWidth()
+                                .background(DarkSurface, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(DarkSurface, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Terminal, contentDescription = null, tint = ScadGold, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = strings.terminalHeader,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { viewModel.clearLogs() },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(Icons.Default.DeleteSweep, contentDescription = strings.clearConsole, tint = Color(0xFFAAAAAA))
-                                }
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .background(Color(0xFF08090C), RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
-                                    .border(1.dp, DarkBorder, RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
-                                    .padding(12.dp)
-                                    .verticalScroll(scrollState)
-                            ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Terminal, contentDescription = null, tint = ScadGold, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = logOutput,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = ConsoleText,
-                                    lineHeight = MaterialTheme.typography.bodySmall.lineHeight * 1.3
+                                    text = strings.terminalHeader,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
+                            IconButton(
+                                onClick = { viewModel.clearLogs() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.DeleteSweep, contentDescription = strings.clearConsole, tint = Color(0xFFAAAAAA))
+                            }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .background(Color(0xFF08090C), RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
+                                .border(1.dp, DarkBorder, RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
+                                .padding(12.dp)
+                                .verticalScroll(scrollState)
+                        ) {
+                            Text(
+                                text = logOutput,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = ConsoleText,
+                                lineHeight = MaterialTheme.typography.bodySmall.lineHeight * 1.3
+                            )
                         }
                     }
                 }
