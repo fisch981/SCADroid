@@ -48,4 +48,15 @@ foreach ($pat in $patterns) {
     }
 }
 
-Write-Host "CHANGELOG.md erfolgreich validiert (reines UTF-8, kein Mojibake, keine Transliterationen)." -ForegroundColor Green
+# 5. README.md Pruefung: Kein Geodreieck-Emoji
+$readmePath = "README.md"
+if (Test-Path $readmePath) {
+    $firstLine = [System.IO.File]::ReadAllLines($readmePath, [System.Text.Encoding]::UTF8)[0]
+    # U+1F4D0 (Geodreieck / Triangular Ruler Emoji)
+    $emojiStr = [char]::ConvertFromUtf32(0x1F4D0)
+    if ($firstLine.Contains($emojiStr)) {
+        throw "Fehler: README.md enthaelt das Geodreieck-Emoji (U+1F4D0)!"
+    }
+}
+
+Write-Host "CHANGELOG.md und README.md erfolgreich validiert (reines UTF-8, kein Mojibake, keine Transliterationen, keine unerwuenschten Emojis)." -ForegroundColor Green

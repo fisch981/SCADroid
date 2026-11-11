@@ -108,4 +108,18 @@ class ChangelogTest {
             }
         }
     }
+
+    @Test
+    fun testReadmeHeaderHasNoEmoji() {
+        val candidates = listOf(
+            File("README.md"),
+            File("../README.md"),
+            File("../../README.md")
+        )
+        val readme = candidates.firstOrNull { it.exists() && it.isFile }
+            ?: throw IllegalStateException("README.md konnte im Projektverzeichnis nicht gefunden werden!")
+        val firstLine = readme.bufferedReader(StandardCharsets.UTF_8).readLine() ?: ""
+        assertFalse("README.md Titel darf kein Geodreieck-Emoji (📐) enthalten!", firstLine.contains("📐"))
+        assertTrue("README.md muss mit '# SCADroid' beginnen", firstLine.trim() == "# SCADroid")
+    }
 }

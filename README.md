@@ -1,4 +1,4 @@
-# SCADroid 📐
+# SCADroid
 
 [![License: GPL-2.0](https://img.shields.io/badge/License-GPL%202.0%20(CGAL%20exception)-blue.svg)](LICENSE)
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%208.0%2B-green.svg)](https://developer.android.com)
