@@ -225,6 +225,23 @@ fun SCADroidApp(
                         }
                     }
 
+                    // Schnell-Speichern Button (Direktes Speichern bzw. Einmalige Ortsabfrage)
+                    IconButton(
+                        onClick = {
+                            viewModel.saveFile(context.contentResolver) {
+                                saveFileLauncher.launch(currentFileName)
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Save,
+                            contentDescription = strings.saveCode,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     // More Menu (Speichern, STL-Export, Öffnen, Sprache etc.)
                     Box {
                         IconButton(
@@ -258,6 +275,16 @@ fun SCADroidApp(
                                 onClick = {
                                     menuExpanded = false
                                     openFileLauncher.launch(arrayOf("*/*", "application/x-openscad", "text/plain"))
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(strings.saveCode, color = Color.White) },
+                                leadingIcon = { Icon(Icons.Default.Save, contentDescription = null, tint = ScadGold) },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.saveFile(context.contentResolver) {
+                                        saveFileLauncher.launch(currentFileName)
+                                    }
                                 }
                             )
                             DropdownMenuItem(

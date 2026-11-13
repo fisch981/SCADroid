@@ -2,6 +2,7 @@ package de.fisch981.scadroid.viewmodel
 
 import android.app.Application
 import android.content.ContentResolver
+import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,6 +62,11 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
 
     private val _currentFileName = MutableStateFlow<String>(prefs.getString("current_file_name", "modell.scad") ?: "modell.scad")
     val currentFileName: StateFlow<String> = _currentFileName.asStateFlow()
+
+    private val _currentFileUri = MutableStateFlow<Uri?>(
+        prefs.getString("current_file_uri", null)?.let { Uri.parse(it) }
+    )
+    val currentFileUri: StateFlow<Uri?> = _currentFileUri.asStateFlow()
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
@@ -213,8 +220,12 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         paramOverrides.clear()
         paramBoundsCache.clear()
         _code.value = emptyTemplate
+        _currentFileUri.value = null
         _currentFileName.value = "neues_modell.scad"
-        prefs.edit().putString("current_file_name", "neues_modell.scad").apply()
+        prefs.edit()
+            .remove("current_file_uri")
+            .putString("current_file_name", "neues_modell.scad")
+            .apply()
         saveCodeInternal(emptyTemplate)
         appendLog("Neues Modell erstellt (\$fn = 32;).")
         _statusMessage.value = "Neues Modell erstellt"
@@ -225,8 +236,12 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         paramOverrides.clear()
         paramBoundsCache.clear()
         _code.value = DEFAULT_SAMPLE_CODE
+        _currentFileUri.value = null
         _currentFileName.value = "beispiel_modell.scad"
-        prefs.edit().putString("current_file_name", "beispiel_modell.scad").apply()
+        prefs.edit()
+            .remove("current_file_uri")
+            .putString("current_file_name", "beispiel_modell.scad")
+            .apply()
         saveCodeInternal(DEFAULT_SAMPLE_CODE)
         appendLog("Beispiel-Modell geladen.")
         _statusMessage.value = "Beispiel geladen"
@@ -272,6 +287,13 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                     return@launch
                 }
 
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                } catch (_: Exception) {}
+
                 val inputStream = contentResolver.openInputStream(uri)
                 val loadedCode = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
 
@@ -285,8 +307,12 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
                     paramOverrides.clear()
                     paramBoundsCache.clear()
                     _code.value = loadedCode
+                    _currentFileUri.value = uri
                     _currentFileName.value = fileName
-                    prefs.edit().putString("current_file_name", fileName).apply()
+                    prefs.edit()
+                        .putString("current_file_uri", uri.toString())
+                        .putString("current_file_name", fileName)
+                        .apply()
                     saveCodeInternal(loadedCode)
                     appendLog("Datei '$fileName' erfolgreich geladen (${loadedCode.length} Zeichen).")
                     _statusMessage.value = "'$fileName' geladen"
@@ -301,16 +327,71 @@ class ProjectViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Speichert direkt in die bestehende Datei (Überschreiben).
+     * Falls noch kein Speicherort/Dateiname festgelegt ist oder das Überschreiben fehlschlägt,
+     * wird onNeedSaveAs aufgerufen, um einmalig nach dem Speicherort zu fragen.
+     */
+    fun saveFile(contentResolver: ContentResolver, onNeedSaveAs: () -> Unit) {
+        val uri = _currentFileUri.value
+        if (uri == null) {
+            onNeedSaveAs()
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val outputStream = contentResolver.openOutputStream(uri, "wt")
+                    ?: contentResolver.openOutputStream(uri)
+                    ?: throw IOException("Konnte Datei-Stream nicht öffnen.")
+
+                outputStream.use { os ->
+                    os.write(_code.value.toByteArray(Charsets.UTF_8))
+                }
+
+                val fileName = _currentFileName.value
+                withContext(Dispatchers.Main) {
+                    saveCodeInternal(_code.value)
+                    appendLog("Datei '$fileName' erfolgreich gespeichert.")
+                    _statusMessage.value = "'$fileName' gespeichert"
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    appendLog("Direktes Überschreiben fehlgeschlagen (${e.message}). Bitte Speicherort neu wählen...")
+                    _currentFileUri.value = null
+                    prefs.edit().remove("current_file_uri").apply()
+                    onNeedSaveAs()
+                }
+            }
+        }
+    }
+
     fun saveToUri(uri: Uri, contentResolver: ContentResolver) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                contentResolver.openOutputStream(uri)?.use { outputStream ->
-                    outputStream.write(_code.value.toByteArray(Charsets.UTF_8))
+                val outputStream = contentResolver.openOutputStream(uri, "wt")
+                    ?: contentResolver.openOutputStream(uri)
+                    ?: throw IOException("Konnte Datei-Stream nicht öffnen.")
+
+                outputStream.use { os ->
+                    os.write(_code.value.toByteArray(Charsets.UTF_8))
                 }
-                val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "modell.scad"
+
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                } catch (_: Exception) {}
+
+                val fileName = resolveDisplayName(uri, contentResolver, _currentFileName.value)
                 withContext(Dispatchers.Main) {
+                    _currentFileUri.value = uri
                     _currentFileName.value = fileName
-                    prefs.edit().putString("current_file_name", fileName).apply()
+                    prefs.edit()
+                        .putString("current_file_uri", uri.toString())
+                        .putString("current_file_name", fileName)
+                        .apply()
                     saveCodeInternal(_code.value)
                     appendLog("Datei erfolgreich gespeichert nach '$fileName'.")
                     _statusMessage.value = "'$fileName' gespeichert"

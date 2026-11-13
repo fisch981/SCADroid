@@ -8,6 +8,12 @@ Dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/) und dem 
 
 ---
 
+## [0.1.29] - 2026-11-13
+
+### Geändert & Hinzugefügt / Changed & Added
+- **DE:** Reine Speichern-Funktion ergänzt: Bestehende Dateien werden mit bisherigem Namen überschrieben; bei neuen Modellen ohne Dateinamen erfolgt einmalige Speicherort- und Namensabfrage
+- **EN:** Add direct Save function: Overwrite active file in place; prompt for name and location once only when saving new untitled models
+
 ## [0.1.28] - 2026-11-10
 
 ### Geändert & Hinzugefügt / Changed & Added
