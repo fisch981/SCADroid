@@ -41,6 +41,8 @@ val OPENSCAD_SNIPPETS = listOf(
     ScadSnippet("scale", "3D Skalierung entlang Achsen", "scale([1, 1, 1]) ", CompletionItemKind.Keyword),
     ScadSnippet("mirror", "3D Spiegelung an Normalenebene", "mirror([1, 0, 0]) ", CompletionItemKind.Keyword),
     ScadSnippet("color", "Farbe für Kind-Geometrie zuweisen", "color([1, 0, 0]) ", CompletionItemKind.Keyword),
+    ScadSnippet("color_name", "Benannte Farbe (CSS/X11) mit optionaler Deckkraft", "color(\"red\") ", CompletionItemKind.Keyword),
+    ScadSnippet("color_rgba", "RGBA-Farbe mit Transparenz (0..1)", "color([1.0, 0.5, 0.0, 0.5]) ", CompletionItemKind.Keyword),
 
     // 2D & Extrusions
     ScadSnippet("circle", "2D Kreis erstellen", "circle(r = 10);", CompletionItemKind.Function),
@@ -48,9 +50,12 @@ val OPENSCAD_SNIPPETS = listOf(
     ScadSnippet("polygon", "2D Polygon aus Punktliste", "polygon(points = [[0,0], [10,0], [5,10]]);", CompletionItemKind.Function),
     ScadSnippet("linear_extrude", "2D Kontur linear in 3D extrudieren", "linear_extrude(height = 10) ", CompletionItemKind.Keyword),
     ScadSnippet("rotate_extrude", "2D Kontur rotativ extrudieren", "rotate_extrude(angle = 360) ", CompletionItemKind.Keyword),
+    ScadSnippet("roof", "Dach/Walmdach aus 2D Kontur erzeugen", "roof() ", CompletionItemKind.Function),
+    ScadSnippet("fill", "Innere Löcher aus 2D Kontur füllen", "fill() ", CompletionItemKind.Function),
 
     // Features & Modules
     ScadSnippet("module", "Benutzerdefiniertes Modul definieren", "module name() {\n    \n}", CompletionItemKind.Snippet),
+    ScadSnippet("children", "Untergeordnete Kind-Objekte im Modul aufrufen", "children();", CompletionItemKind.Keyword),
     ScadSnippet("for", "Schleife über Wertebereich", "for (i = [0:10]) {\n    \n}", CompletionItemKind.Snippet),
     ScadSnippet("minkowski", "Minkowski-Summe bilden", "minkowski() {\n    \n}", CompletionItemKind.Method),
     ScadSnippet("hull", "Konvexe Hülle über Kinder bilden", "hull() {\n    \n}", CompletionItemKind.Method),
@@ -75,6 +80,7 @@ val OPENSCAD_SNIPPETS = listOf(
     // Advanced 3D & 2D
     ScadSnippet("polyhedron", "Benutzerdefiniertes Polyeder aus Punkten und Flächen", "polyhedron(\n    points = [[0,0,0], [10,0,0], [0,10,0], [0,0,10]],\n    faces = [[0,1,2], [0,2,3], [0,3,1], [1,3,2]]\n);", CompletionItemKind.Function),
     ScadSnippet("text", "2D Text erstellen", "text(\"Text\", size = 10, halign = \"center\", valign = \"center\");", CompletionItemKind.Function),
+    ScadSnippet("textmetrics", "Abmessungen und Metrik eines 2D-Texts abfragen", "textmetrics(\"Text\", size = 10)", CompletionItemKind.Function),
     ScadSnippet("offset", "2D Kontur vergrößern / abrunden / anfasen", "offset(r = 2) ", CompletionItemKind.Function),
     ScadSnippet("projection", "3D Geometrie auf 2D Ebene projizieren", "projection(cut = false) ", CompletionItemKind.Function),
     ScadSnippet("render", "Teilbaum explizit als CSG-Mesh vorberechnen", "render() ", CompletionItemKind.Function),
@@ -100,16 +106,20 @@ class OpenScadAnalyzeManager : AnalyzeManager {
 
     private val commentEndMarker = "*" + "/"
 
-    private val keywords = setOf("module", "function", "if", "else", "for", "let", "each", "true", "false", "include", "use")
+    private val keywords = setOf("module", "function", "if", "else", "for", "let", "each", "true", "false", "undef", "include", "use")
     private val functions = setOf(
         "cube", "cylinder", "sphere", "circle", "square", "polygon", "polyhedron",
         "difference", "union", "intersection",
         "translate", "rotate", "scale", "mirror", "color", "multmatrix", "resize",
-        "linear_extrude", "rotate_extrude", "minkowski", "hull", "render",
-        "offset", "projection", "surface", "text", "import",
+        "linear_extrude", "rotate_extrude", "minkowski", "hull", "render", "roof", "fill",
+        "offset", "projection", "surface", "text", "import", "import_stl", "import_dxf", "import_off",
+        "dxf_linear_extrude", "dxf_rotate_extrude", "dxf_dim", "dxf_cross",
         "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
         "sqrt", "abs", "min", "max", "pow", "exp", "log", "ln", "sign", "round", "floor", "ceil",
-        "concat", "lookup", "str", "chr", "search", "version", "version_num", "parent_module",
+        "norm", "cross", "rands", "ord", "len",
+        "is_undef", "is_bool", "is_num", "is_string", "is_list", "is_function", "is_object",
+        "textmetrics", "fontmetrics", "object",
+        "concat", "lookup", "str", "chr", "search", "version", "version_num", "parent_module", "children", "child", "intersection_for", "assign",
         "echo", "assert"
     )
 

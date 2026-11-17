@@ -16,7 +16,8 @@ class TriangleMesh(
     val triangleCount: Int,
     val minBound: Vector3,
     val maxBound: Vector3,
-    val opaqueVertexCount: Int = vertexCount
+    val opaqueVertexCount: Int = vertexCount,
+    val exportTriangleCount: Int = if (opaqueVertexCount >= 3) opaqueVertexCount / 3 else triangleCount
 ) {
     val center: Vector3 = (minBound + maxBound) * 0.5f
     val boundingRadius: Float = max((maxBound - minBound).length() * 0.5f, 10f)
@@ -29,7 +30,7 @@ class TriangleMesh(
         "SCADroid Mobile OpenSCAD Exporter".toByteArray().copyInto(header)
         out.write(header)
 
-        val exportTriCount = if (opaqueVertexCount >= 3) opaqueVertexCount / 3 else triangleCount
+        val exportTriCount = if (exportTriangleCount in 1..triangleCount) exportTriangleCount else triangleCount
         val countBuf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
         countBuf.putInt(exportTriCount)
         out.write(countBuf.array())
@@ -76,6 +77,24 @@ class TriangleMesh(
     companion object {
         val EMPTY = fromSolid(CsgSolid(emptyList()))
 
+        private class ParsedTri(
+            val nx: Float, val ny: Float, val nz: Float,
+            val x0: Float, val y0: Float, val z0: Float,
+            val x1: Float, val y1: Float, val z1: Float,
+            val x2: Float, val y2: Float, val z2: Float,
+            val r: Float, val g: Float, val b: Float, val a: Float
+        )
+
+        private fun hasScadCol1Trailer(bytes: ByteArray, triCount: Int): Boolean {
+            val trailerOffset = 84 + triCount * 50
+            if (bytes.size < trailerOffset + 8 + triCount * 4) return false
+            val magic = "SCADCOL1"
+            for (k in 0 until 8) {
+                if (bytes[trailerOffset + k] != magic[k].code.toByte()) return false
+            }
+            return true
+        }
+
         fun fromBinaryStl(bytes: ByteArray, color: Vector3 = Vector3(0.97f, 0.74f, 0.22f)): TriangleMesh {
             if (bytes.size < 84) return EMPTY
             val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
@@ -84,10 +103,8 @@ class TriangleMesh(
             val triCount = if (headerTriCount in 1..maxPossibleTris) headerTriCount else maxPossibleTris
             if (triCount <= 0) return EMPTY
 
-            val totalVertices = triCount * 3
-            val vBuf = ByteBuffer.allocateDirect(totalVertices * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
-            val nBuf = ByteBuffer.allocateDirect(totalVertices * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
-            val cBuf = ByteBuffer.allocateDirect(totalVertices * 4 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            val hasColorTrailer = hasScadCol1Trailer(bytes, triCount)
+            val trailerDataStart = 84 + triCount * 50 + 8
 
             var minX = Float.MAX_VALUE
             var minY = Float.MAX_VALUE
@@ -96,8 +113,12 @@ class TriangleMesh(
             var maxY = -Float.MAX_VALUE
             var maxZ = -Float.MAX_VALUE
 
+            val opaqueList = ArrayList<ParsedTri>(triCount)
+            val translucentColorList = ArrayList<ParsedTri>()
+            val highlightList = ArrayList<ParsedTri>()
+            val backgroundList = ArrayList<ParsedTri>()
+
             var offset = 84
-            var opaqueVerts = 0
             for (i in 0 until triCount) {
                 var nx = buf.getFloat(offset)
                 var ny = buf.getFloat(offset + 4)
@@ -120,18 +141,25 @@ class TriangleMesh(
                 val g: Float
                 val b: Float
                 val a: Float
-                when (attr) {
-                    1 -> {
-                        // OpenSCAD '#' Highlight / Debug Modifier (Halbtransparentes Rot/Pink)
-                        r = 1.0f; g = 0.35f; b = 0.35f; a = 0.40f
-                    }
-                    2 -> {
-                        // OpenSCAD '%' Background / Transparent Modifier (Halbtransparentes Grau)
-                        r = 0.75f; g = 0.75f; b = 0.78f; a = 0.28f
-                    }
-                    else -> {
-                        r = color.x; g = color.y; b = color.z; a = 1.0f
-                        opaqueVerts += 3
+                if (hasColorTrailer) {
+                    val cOff = trailerDataStart + i * 4
+                    r = (bytes[cOff].toInt() and 0xFF) / 255f
+                    g = (bytes[cOff + 1].toInt() and 0xFF) / 255f
+                    b = (bytes[cOff + 2].toInt() and 0xFF) / 255f
+                    a = (bytes[cOff + 3].toInt() and 0xFF) / 255f
+                } else {
+                    when (attr) {
+                        1 -> {
+                            // OpenSCAD '#' Highlight / Debug Modifier (Halbtransparentes Rot/Pink)
+                            r = 1.0f; g = 0.35f; b = 0.35f; a = 0.40f
+                        }
+                        2 -> {
+                            // OpenSCAD '%' Background / Transparent Modifier (Halbtransparentes Grau)
+                            r = 0.75f; g = 0.75f; b = 0.78f; a = 0.28f
+                        }
+                        else -> {
+                            r = color.x; g = color.y; b = color.z; a = 1.0f
+                        }
                     }
                 }
 
@@ -155,36 +183,58 @@ class TriangleMesh(
                     }
                 }
 
-                // Vertex 0
-                vBuf.put(x0); vBuf.put(y0); vBuf.put(z0)
-                nBuf.put(nx); nBuf.put(ny); nBuf.put(nz)
-                cBuf.put(r); cBuf.put(g); cBuf.put(b); cBuf.put(a)
-                if (x0 < minX) minX = x0; if (x0 > maxX) maxX = x0
-                if (y0 < minY) minY = y0; if (y0 > maxY) maxY = y0
-                if (z0 < minZ) minZ = z0; if (z0 > maxZ) maxZ = z0
+                minX = min(minX, min(x0, min(x1, x2)))
+                minY = min(minY, min(y0, min(y1, y2)))
+                minZ = min(minZ, min(z0, min(z1, z2)))
+                maxX = max(maxX, max(x0, max(x1, x2)))
+                maxY = max(maxY, max(y0, max(y1, y2)))
+                maxZ = max(maxZ, max(z0, max(z1, z2)))
 
-                // Vertex 1
-                vBuf.put(x1); vBuf.put(y1); vBuf.put(z1)
-                nBuf.put(nx); nBuf.put(ny); nBuf.put(nz)
-                cBuf.put(r); cBuf.put(g); cBuf.put(b); cBuf.put(a)
-                if (x1 < minX) minX = x1; if (x1 > maxX) maxX = x1
-                if (y1 < minY) minY = y1; if (y1 > maxY) maxY = y1
-                if (z1 < minZ) minZ = z1; if (z1 > maxZ) maxZ = z1
-
-                // Vertex 2
-                vBuf.put(x2); vBuf.put(y2); vBuf.put(z2)
-                nBuf.put(nx); nBuf.put(ny); nBuf.put(nz)
-                cBuf.put(r); cBuf.put(g); cBuf.put(b); cBuf.put(a)
-                if (x2 < minX) minX = x2; if (x2 > maxX) maxX = x2
-                if (y2 < minY) minY = y2; if (y2 > maxY) maxY = y2
-                if (z2 < minZ) minZ = z2; if (z2 > maxZ) maxZ = z2
+                val parsedTri = ParsedTri(nx, ny, nz, x0, y0, z0, x1, y1, z1, x2, y2, z2, r, g, b, a)
+                when {
+                    attr == 2 -> backgroundList.add(parsedTri)
+                    attr == 1 -> highlightList.add(parsedTri)
+                    a < 0.995f -> translucentColorList.add(parsedTri)
+                    else -> opaqueList.add(parsedTri)
+                }
 
                 offset += 50
+            }
+
+            val totalVertices = triCount * 3
+            val vBuf = ByteBuffer.allocateDirect(totalVertices * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            val nBuf = ByteBuffer.allocateDirect(totalVertices * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            val cBuf = ByteBuffer.allocateDirect(totalVertices * 4 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+
+            val orderedGroups = listOf(opaqueList, translucentColorList, highlightList, backgroundList)
+            for (group in orderedGroups) {
+                for (tri in group) {
+                    vBuf.put(tri.x0); vBuf.put(tri.y0); vBuf.put(tri.z0)
+                    vBuf.put(tri.x1); vBuf.put(tri.y1); vBuf.put(tri.z1)
+                    vBuf.put(tri.x2); vBuf.put(tri.y2); vBuf.put(tri.z2)
+
+                    nBuf.put(tri.nx); nBuf.put(tri.ny); nBuf.put(tri.nz)
+                    nBuf.put(tri.nx); nBuf.put(tri.ny); nBuf.put(tri.nz)
+                    nBuf.put(tri.nx); nBuf.put(tri.ny); nBuf.put(tri.nz)
+
+                    cBuf.put(tri.r); cBuf.put(tri.g); cBuf.put(tri.b); cBuf.put(tri.a)
+                    cBuf.put(tri.r); cBuf.put(tri.g); cBuf.put(tri.b); cBuf.put(tri.a)
+                    cBuf.put(tri.r); cBuf.put(tri.g); cBuf.put(tri.b); cBuf.put(tri.a)
+                }
             }
 
             vBuf.position(0)
             nBuf.position(0)
             cBuf.position(0)
+
+            val opaqueVerts = opaqueList.size * 3
+            val exportTris = if (opaqueList.size + translucentColorList.size > 0) {
+                opaqueList.size + translucentColorList.size
+            } else if (highlightList.isNotEmpty()) {
+                highlightList.size
+            } else {
+                triCount
+            }
 
             return TriangleMesh(
                 vertexBuffer = vBuf,
@@ -194,7 +244,8 @@ class TriangleMesh(
                 triangleCount = triCount,
                 minBound = Vector3(minX, minY, minZ),
                 maxBound = Vector3(maxX, maxY, maxZ),
-                opaqueVertexCount = opaqueVerts
+                opaqueVertexCount = opaqueVerts,
+                exportTriangleCount = exportTris
             )
         }
 

@@ -114,6 +114,13 @@ if ($clCheck.Contains([char]0x00C3) -or $clCheck.Contains([char]0xFFFD)) {
     throw "Kritischer Fehler: Mojibake in CHANGELOG.md nach dem Schreiben erkannt! Abbruch."
 }
 
+# 3b. OpenSCAD Desktop Parity Test Suite ausfuehren
+Write-Host "==> Fuehre OpenSCAD Desktop-Paritaetstests aus..." -ForegroundColor Cyan
+node "scripts/verify_openscad_parity.js"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "OpenSCAD Desktop-Paritaetstests (verify_openscad_parity.js) sind fehlgeschlagen (Exit Code $LASTEXITCODE)!"
+}
+
 # 4. Release APK kompilieren inklusive automatischer Unit-Tests (ChangelogTest)
 Write-Host "==> Kompiliere & teste Release-APK v$newName..." -ForegroundColor Cyan
 if (-not $env:JAVA_HOME -or -not (Test-Path $env:JAVA_HOME)) {

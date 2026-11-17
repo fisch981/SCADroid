@@ -8,6 +8,12 @@ Dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/) und dem 
 
 ---
 
+## [0.1.30] - 2026-11-17
+
+### Geändert & Hinzugefügt / Changed & Added
+- **DE:** Vollständige Unterstützung für color() (RGB, RGBA, Hex, Farbnamen, boolesche Flächenfarben und 2D-Farben), experimentelle OpenSCAD-Funktionen (roof, textmetrics, fontmetrics) sowie automatische Desktop-Paritätstests ergänzt
+- **EN:** Add full color() support (RGB, RGBA, hex, named colors, boolean face colors, and 2D colors), experimental OpenSCAD builtins (roof, textmetrics, fontmetrics), and automated Desktop parity test suite
+
 ## [0.1.29] - 2026-11-13
 
 ### Geändert & Hinzugefügt / Changed & Added

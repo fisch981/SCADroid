@@ -5225,11 +5225,29 @@ function transformMinkowskiBlocks(code, state) {
   return out;
 }
 
+var ENGINE_ENABLE_FLAGS = [
+  "--backend=Manifold",
+  "--enable=roof",
+  "--enable=textmetrics",
+  "--enable=import-function",
+  "--enable=object-function",
+  "--enable=predictible-output"
+];
+
 function hasScadModifier(code, modChar) {
   var n = code.length;
   var i = 0;
+  var atStmtStart = true;
+  var parenDepth = 0;
+  var bracketDepth = 0;
+  var inAssignment = false;
+
   while (i < n) {
     var c = code[i];
+    if (/\s/.test(c)) {
+      i++;
+      continue;
+    }
     if (c === '/' && i + 1 < n && code[i + 1] === '/') {
       i += 2;
       while (i < n && code[i] !== '\n') i++;
@@ -5242,6 +5260,7 @@ function hasScadModifier(code, modChar) {
       continue;
     }
     if (c === '"') {
+      atStmtStart = false;
       i++;
       while (i < n && code[i] !== '"') {
         if (code[i] === '\\') i++;
@@ -5250,7 +5269,59 @@ function hasScadModifier(code, modChar) {
       i++;
       continue;
     }
-    if (c === modChar) return true;
+    if (atStmtStart && (c === '!' || c === '#' || c === '%' || c === '*')) {
+      if (c === modChar) return true;
+      i++;
+      continue;
+    }
+    if (c === '(') {
+      parenDepth++;
+      atStmtStart = false;
+      i++;
+      continue;
+    }
+    if (c === ')') {
+      if (parenDepth > 0) parenDepth--;
+      atStmtStart = (parenDepth === 0 && bracketDepth === 0 && !inAssignment);
+      i++;
+      continue;
+    }
+    if (c === '[') {
+      bracketDepth++;
+      atStmtStart = false;
+      i++;
+      continue;
+    }
+    if (c === ']') {
+      if (bracketDepth > 0) bracketDepth--;
+      atStmtStart = false;
+      i++;
+      continue;
+    }
+    if (c === '{' || c === '}' || c === ';') {
+      if (c === ';') inAssignment = false;
+      atStmtStart = true;
+      i++;
+      continue;
+    }
+    if (c === '=' && parenDepth === 0 && bracketDepth === 0) {
+      var prevC = i > 0 ? code[i - 1] : '';
+      var nextC = i + 1 < n ? code[i + 1] : '';
+      if (prevC !== '!' && prevC !== '<' && prevC !== '>' && prevC !== '=' && nextC !== '=') {
+        inAssignment = true;
+      }
+      atStmtStart = false;
+      i++;
+      continue;
+    }
+    if (/[a-zA-Z_$]/.test(c)) {
+      var startId = i;
+      while (i < n && /[a-zA-Z0-9_$]/.test(code[i])) i++;
+      var ident = code.slice(startId, i);
+      atStmtStart = (ident === 'else' && !inAssignment && parenDepth === 0 && bracketDepth === 0);
+      continue;
+    }
+    atStmtStart = false;
     i++;
   }
   return false;
@@ -5332,6 +5403,29 @@ function stripAllCsgModifiers(csgCode) {
   return out;
 }
 
+function findTopLevelOpenBrace(stmt) {
+  var p = 0, b = 0;
+  for (var k = 0; k < stmt.length; k++) {
+    var ch = stmt[k];
+    if (ch === '"') {
+      k++;
+      while (k < stmt.length && stmt[k] !== '"') {
+        if (stmt[k] === '\\') k++;
+        k++;
+      }
+      continue;
+    }
+    if (ch === '(') p++;
+    else if (ch === ')') { if (p > 0) p--; }
+    else if (ch === '[') b++;
+    else if (ch === ']') { if (b > 0) b--; }
+    else if (ch === '{' && p === 0 && b === 0) {
+      return k;
+    }
+  }
+  return -1;
+}
+
 function extractModifiedCsg(blockText, modChar) {
   var stmts = splitCsgStatements(blockText);
   var kept = [];
@@ -5343,32 +5437,13 @@ function extractModifiedCsg(blockText, modChar) {
       continue;
     }
     var cleanStmt = stmt.replace(/^[#!%*]+\s*/, '');
-    var p = 0, b = 0, openBrace = -1;
-    for (var k = 0; k < cleanStmt.length; k++) {
-      var ch = cleanStmt[k];
-      if (ch === '"') {
-        k++;
-        while (k < cleanStmt.length && cleanStmt[k] !== '"') {
-          if (cleanStmt[k] === '\\') k++;
-          k++;
-        }
-        continue;
-      }
-      if (ch === '(') p++;
-      else if (ch === ')') { if (p > 0) p--; }
-      else if (ch === '[') b++;
-      else if (ch === ']') { if (b > 0) b--; }
-      else if (ch === '{' && p === 0 && b === 0) {
-        openBrace = k;
-        break;
-      }
-    }
+    var openBrace = findTopLevelOpenBrace(cleanStmt);
     if (openBrace !== -1 && cleanStmt.endsWith('}')) {
       var header = cleanStmt.slice(0, openBrace).trim();
       var inner = cleanStmt.slice(openBrace + 1, cleanStmt.length - 1);
       var extractedInner = extractModifiedCsg(inner, modChar);
       if (extractedInner.length > 0) {
-        if (/^(multmatrix|linear_extrude|rotate_extrude|resize|offset|projection)\b/.test(header)) {
+        if (/^(multmatrix|color|linear_extrude|rotate_extrude|resize|offset|projection|hull|minkowski|fill)\b/.test(header)) {
           kept.push(header + " {\n" + extractedInner + "\n}");
         } else {
           kept.push("union() {\n" + extractedInner + "\n}");
@@ -5384,11 +5459,12 @@ function extractOpaqueCsg(blockText) {
   var kept = [];
   for (var i = 0; i < stmts.length; i++) {
     var stmt = stmts[i].trim();
-    if (stmt.charAt(0) === '#') {
+    var c0 = stmt.charAt(0);
+    if (c0 === '#' || c0 === '%' || c0 === '*') {
       continue;
     }
     var cleanStmt = stmt.replace(/^[#!%*]+\s*/, '');
-    var openBrace = cleanStmt.indexOf('{');
+    var openBrace = findTopLevelOpenBrace(cleanStmt);
     if (openBrace !== -1 && cleanStmt.endsWith('}')) {
       var header = cleanStmt.slice(0, openBrace).trim();
       var body = cleanStmt.slice(openBrace + 1, cleanStmt.length - 1).trim();
@@ -5396,11 +5472,16 @@ function extractOpaqueCsg(blockText) {
       if (isDiff) {
         var diffChildren = splitCsgStatements(body);
         if (diffChildren.length > 0) {
-          if (diffChildren[0].trim().charAt(0) === '#') {
+          var d0 = diffChildren[0].trim().charAt(0);
+          if (d0 === '#' || d0 === '%' || d0 === '*') {
             continue;
           }
           var cleanDiff = [stripAllCsgModifiers(diffChildren[0])];
           for (var d = 1; d < diffChildren.length; d++) {
+            var dc = diffChildren[d].trim().charAt(0);
+            if (dc === '%' || dc === '*') {
+              continue;
+            }
             cleanDiff.push(stripAllCsgModifiers(diffChildren[d]));
           }
           kept.push(header + " {\n" + cleanDiff.join("\n") + "\n}");
@@ -5420,55 +5501,236 @@ function extractOpaqueCsg(blockText) {
   return "union() {\n" + kept.join("\n") + "\n}";
 }
 
-function getBinstlTriangleCount(bytes) {
-  if (!bytes || bytes.length < 84) return 0;
-  var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  var count = view.getUint32(80, true);
-  var maxPossible = Math.floor((bytes.length - 84) / 50);
-  return (count >= 1 && count <= maxPossible) ? count : maxPossible;
+function wrap2DCsgWithExtrude(blockText) {
+  var stmts = splitCsgStatements(blockText);
+  var out = [];
+  for (var i = 0; i < stmts.length; i++) {
+    var stmt = stmts[i].trim();
+    if (!stmt) continue;
+    var modMatch = stmt.match(/^([#!%*]+\s*)([\s\S]*)$/);
+    var prefix = modMatch ? modMatch[1] : "";
+    var rest = modMatch ? modMatch[2].trim() : stmt;
+    var openBrace = findTopLevelOpenBrace(rest);
+    if (openBrace !== -1 && rest.endsWith('}')) {
+      var header = rest.slice(0, openBrace).trim();
+      if (/^(color|multmatrix|group|union)\b/.test(header)) {
+        var inner = rest.slice(openBrace + 1, rest.length - 1);
+        out.push(prefix + header + " {\n" + wrap2DCsgWithExtrude(inner) + "\n}");
+        continue;
+      }
+    }
+    out.push(prefix + "linear_extrude(height = 1, center = true) {\n" + rest + "\n}");
+  }
+  return out.join("\n");
 }
 
-function combineStlBuffers(mainBytes, highlightBytes, backgroundBytes) {
-  var nMain = getBinstlTriangleCount(mainBytes);
-  var nHigh = getBinstlTriangleCount(highlightBytes);
-  var nBg = getBinstlTriangleCount(backgroundBytes);
+function parseOffToTriangles(offText, modifierAttr) {
+  if (!offText) return [];
+  var attr = modifierAttr || 0;
+  var rawLines = offText.split(/\r?\n/);
+  var lines = [];
+  for (var i = 0; i < rawLines.length; i++) {
+    var line = rawLines[i].replace(/#.*$/, '').trim();
+    if (line.length > 0) lines.push(line);
+  }
+  if (lines.length === 0) return [];
+
+  var idx = 0;
+  var headerTokens = lines[idx].split(/\s+/);
+  if (headerTokens[0] !== 'OFF') return [];
+
+  var numVerts = 0, numFaces = 0;
+  if (headerTokens.length >= 3) {
+    numVerts = parseInt(headerTokens[1], 10);
+    numFaces = parseInt(headerTokens[2], 10);
+    idx++;
+  } else {
+    idx++;
+    if (idx >= lines.length) return [];
+    var countTokens = lines[idx].split(/\s+/);
+    numVerts = parseInt(countTokens[0], 10);
+    numFaces = parseInt(countTokens[1], 10);
+    idx++;
+  }
+  if (!(numVerts > 0 && numFaces > 0)) return [];
+
+  var verts = new Array(numVerts);
+  for (var v = 0; v < numVerts && idx < lines.length; v++, idx++) {
+    var vp = lines[idx].split(/\s+/);
+    if (vp.length >= 3) {
+      verts[v] = [parseFloat(vp[0]), parseFloat(vp[1]), parseFloat(vp[2])];
+    }
+  }
+
+  var tris = [];
+  var maxFaceLine = Math.min(idx + numFaces, lines.length);
+  for (; idx < maxFaceLine; idx++) {
+    var fp = lines[idx].split(/\s+/);
+    var nv = parseInt(fp[0], 10);
+    if (!(nv >= 3) || fp.length < 1 + nv) continue;
+
+    // Default SCADroid Gold
+    var r = 247, g = 189, b = 56, a = 255;
+    var hasExplicitColor = false;
+    var colorCount = fp.length - (1 + nv);
+    if (colorCount >= 3) {
+      var sR = fp[1 + nv], sG = fp[2 + nv], sB = fp[3 + nv];
+      var fR = parseFloat(sR), fG = parseFloat(sG), fB = parseFloat(sB);
+      var hasDot = (sR.indexOf('.') !== -1 || sG.indexOf('.') !== -1 || sB.indexOf('.') !== -1);
+      var cr = hasDot ? Math.round(fR * 255) : Math.round(fR);
+      var cg = hasDot ? Math.round(fG * 255) : Math.round(fG);
+      var cb = hasDot ? Math.round(fB * 255) : Math.round(fB);
+      var ca = 255;
+      if (colorCount >= 4) {
+        var sA = fp[4 + nv];
+        var fA = parseFloat(sA);
+        if (!isNaN(fA)) {
+          ca = ((hasDot || sA.indexOf('.') !== -1) && fA >= 0.0 && fA <= 1.0)
+            ? Math.round(fA * 255)
+            : Math.round(fA);
+          if (ca < 0) ca = 0;
+          if (ca > 255) ca = 255;
+        }
+      }
+      if (!isNaN(cr) && !isNaN(cg) && !isNaN(cb) &&
+          cr >= 0 && cr <= 255 && cg >= 0 && cg <= 255 && cb >= 0 && cb <= 255) {
+        if (cr === 249 && cg === 215 && cb === 44 && ca === 255) {
+          r = 247; g = 189; b = 56; a = 255;
+          hasExplicitColor = false;
+        } else {
+          r = cr; g = cg; b = cb; a = ca;
+          hasExplicitColor = true;
+        }
+      }
+    }
+
+    if (attr === 1) {
+      r = 255; g = 89; b = 89; a = 102;
+    } else if (attr === 2) {
+      if (hasExplicitColor) {
+        a = Math.min(a, 72);
+      } else {
+        r = 191; g = 191; b = 199; a = 72;
+      }
+    }
+
+    var i0 = parseInt(fp[1], 10);
+    var p0 = (i0 >= 0 && i0 < numVerts) ? verts[i0] : null;
+    if (!p0) continue;
+
+    for (var k = 2; k < nv; k++) {
+      var ia = parseInt(fp[k], 10);
+      var ib = parseInt(fp[k + 1], 10);
+      var p1 = (ia >= 0 && ia < numVerts) ? verts[ia] : null;
+      var p2 = (ib >= 0 && ib < numVerts) ? verts[ib] : null;
+      if (!p1 || !p2) continue;
+
+      var ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+      var vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+      var nx = uy * vz - uz * vy;
+      var ny = uz * vx - ux * vz;
+      var nz = ux * vy - uy * vx;
+      var len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (len > 1e-8) {
+        nx /= len; ny /= len; nz /= len;
+      } else {
+        nx = 0; ny = 0; nz = 1;
+      }
+
+      tris.push({
+        nx: nx, ny: ny, nz: nz,
+        v0: p0, v1: p1, v2: p2,
+        attr: attr,
+        r: r, g: g, b: b, a: a
+      });
+    }
+  }
+  return tris;
+}
+
+function combineTriangleListsToBuffer(mainTris, highlightTris, backgroundTris) {
+  var nMain = mainTris ? mainTris.length : 0;
+  var nHigh = highlightTris ? highlightTris.length : 0;
+  var nBg = backgroundTris ? backgroundTris.length : 0;
   var totalTri = nMain + nHigh + nBg;
   if (totalTri <= 0) return null;
 
-  var out = new Uint8Array(84 + totalTri * 50);
-  if (mainBytes && mainBytes.length >= 80) {
-    out.set(mainBytes.subarray(0, 80), 0);
+  var stlSize = 84 + totalTri * 50;
+  var out = new Uint8Array(stlSize + 8 + totalTri * 4);
+  var headerText = "SCADroid OFF/Color Binary STL";
+  for (var h = 0; h < headerText.length && h < 80; h++) {
+    out[h] = headerText.charCodeAt(h);
   }
-  var outView = new DataView(out.buffer, out.byteOffset, out.byteLength);
-  outView.setUint32(80, totalTri, true);
+  var view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  view.setUint32(80, totalTri, true);
 
+  var groups = [mainTris, highlightTris, backgroundTris];
   var offset = 84;
-  if (nMain > 0) {
-    out.set(mainBytes.subarray(84, 84 + nMain * 50), offset);
-    for (var i = 0; i < nMain; i++) {
-      outView.setUint16(offset + i * 50 + 48, 0, true);
-    }
-    offset += nMain * 50;
+  var colorOffset = stlSize + 8;
+
+  // SCADCOL1 Magic Header
+  var magic = "SCADCOL1";
+  for (var m = 0; m < 8; m++) {
+    out[stlSize + m] = magic.charCodeAt(m);
   }
-  if (nHigh > 0) {
-    out.set(highlightBytes.subarray(84, 84 + nHigh * 50), offset);
-    for (var j = 0; j < nHigh; j++) {
-      outView.setUint16(offset + j * 50 + 48, 1, true);
+
+  for (var g = 0; g < groups.length; g++) {
+    var list = groups[g];
+    if (!list || list.length === 0) continue;
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      view.setFloat32(offset, t.nx, true);
+      view.setFloat32(offset + 4, t.ny, true);
+      view.setFloat32(offset + 8, t.nz, true);
+
+      view.setFloat32(offset + 12, t.v0[0], true);
+      view.setFloat32(offset + 16, t.v0[1], true);
+      view.setFloat32(offset + 20, t.v0[2], true);
+
+      view.setFloat32(offset + 24, t.v1[0], true);
+      view.setFloat32(offset + 28, t.v1[1], true);
+      view.setFloat32(offset + 32, t.v1[2], true);
+
+      view.setFloat32(offset + 36, t.v2[0], true);
+      view.setFloat32(offset + 40, t.v2[1], true);
+      view.setFloat32(offset + 44, t.v2[2], true);
+
+      view.setUint16(offset + 48, t.attr, true);
+      offset += 50;
+
+      out[colorOffset] = t.r & 0xFF;
+      out[colorOffset + 1] = t.g & 0xFF;
+      out[colorOffset + 2] = t.b & 0xFF;
+      out[colorOffset + 3] = t.a & 0xFF;
+      colorOffset += 4;
     }
-    offset += nHigh * 50;
-  }
-  if (nBg > 0) {
-    out.set(backgroundBytes.subarray(84, 84 + nBg * 50), offset);
-    for (var k = 0; k < nBg; k++) {
-      outView.setUint16(offset + k * 50 + 48, 2, true);
-    }
-    offset += nBg * 50;
   }
   return out;
 }
 
 function prepareScadForManifold(code) {
   var result = code;
+  if (/\bcolor\s*\(/.test(result)) {
+    result = result.replace(
+      /(\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*")|\bcolor\s*\(\s*(?:alpha\s*=\s*([^,)]+)|undef\s*,\s*([^)]+)|\[\s*-1\s*,\s*-1\s*,\s*-1\s*,\s*([^\]]+)\s*\]|())\s*\)/g,
+      function(match, commentOrStr, alphaNamed, alphaUndef, negVecAlpha, emptyMatch) {
+        if (commentOrStr) return match;
+        if (alphaNamed !== undefined) {
+          return "color([249/255, 215/255, 44/255], alpha = " + alphaNamed + ")";
+        }
+        if (alphaUndef !== undefined) {
+          return "color([249/255, 215/255, 44/255], " + alphaUndef + ")";
+        }
+        if (negVecAlpha !== undefined) {
+          return "color([249/255, 215/255, 44/255, " + negVecAlpha + "])";
+        }
+        if (emptyMatch !== undefined) {
+          return "color([249/255, 215/255, 44/255])";
+        }
+        return match;
+      }
+    );
+  }
   if (!/\bmodule\s+minkowski\b/.test(result) && /\bminkowski\b/.test(result)) {
     result = transformMinkowskiBlocks(result);
   }
@@ -5549,19 +5811,7 @@ function setupInstanceFilesystem(instance, scadCode) {
         if (fileB64 && fileB64.length > 0) {
           var fileBytes = base64ToUint8Array(fileB64);
           var cleanName = rawPath.replace(/^\/+/, "");
-          ensureFsDirectory(instance.FS, cleanName);
-          instance.FS.writeFile("/" + cleanName, fileBytes);
-
-          if (cleanName.startsWith("MCAD/")) {
-            var sub = cleanName.slice(5);
-            ensureFsDirectory(instance.FS, "libraries/MCAD/" + sub);
-            try { instance.FS.writeFile("/libraries/" + cleanName, fileBytes); } catch (_) {}
-          } else if (cleanName.endsWith(".scad")) {
-            ensureFsDirectory(instance.FS, "MCAD/" + cleanName);
-            ensureFsDirectory(instance.FS, "libraries/MCAD/" + cleanName);
-            try { instance.FS.writeFile("/MCAD/" + cleanName, fileBytes); } catch (_) {}
-            try { instance.FS.writeFile("/libraries/MCAD/" + cleanName, fileBytes); } catch (_) {}
-          }
+          var contentToWrite = fileBytes;
 
           if (cleanName.endsWith(".scad")) {
             try {
@@ -5572,7 +5822,22 @@ function setupInstanceFilesystem(instance, scadCode) {
                   pendingQueue.push(subRefs[s]);
                 }
               }
+              contentToWrite = prepareScadForManifold(text);
             } catch (_) {}
+          }
+
+          ensureFsDirectory(instance.FS, cleanName);
+          instance.FS.writeFile("/" + cleanName, contentToWrite);
+
+          if (cleanName.startsWith("MCAD/")) {
+            var sub = cleanName.slice(5);
+            ensureFsDirectory(instance.FS, "libraries/MCAD/" + sub);
+            try { instance.FS.writeFile("/libraries/" + cleanName, contentToWrite); } catch (_) {}
+          } else if (cleanName.endsWith(".scad")) {
+            ensureFsDirectory(instance.FS, "MCAD/" + cleanName);
+            ensureFsDirectory(instance.FS, "libraries/MCAD/" + cleanName);
+            try { instance.FS.writeFile("/MCAD/" + cleanName, contentToWrite); } catch (_) {}
+            try { instance.FS.writeFile("/libraries/MCAD/" + cleanName, contentToWrite); } catch (_) {}
           }
         }
       }
@@ -5607,7 +5872,7 @@ async function initWasm(options = {}) {
   return openscadWasm;
 }
 
-async function runSingleBinstlRender(scadCode, rawProjectCode, options, forwardLogs) {
+async function runSingleBinstlRender(scadCode, rawProjectCode, options, forwardLogs, modifierAttr) {
   const logs = [];
   const errors = [];
   const instance = await initWasm({
@@ -5632,28 +5897,64 @@ async function runSingleBinstlRender(scadCode, rawProjectCode, options, forwardL
   });
   setupInstanceFilesystem(instance, rawProjectCode || scadCode);
   instance.FS.writeFile("/input.scad", scadCode);
-  let exitCode = instance.callMain(["--backend=Manifold", "--export-format=binstl", "/input.scad", "-o", "/output.stl"]);
+  let exitCode = -1;
+  try {
+    exitCode = instance.callMain([...ENGINE_ENABLE_FLAGS, "/input.scad", "-o", "/output.off"]);
+  } catch (callErr) {
+    const errMsg = (callErr && callErr.message) ? callErr.message : String(callErr);
+    errors.push(errMsg);
+    logs.push("ERROR: " + errMsg);
+  }
   let allLogs = logs.join("\n");
   if (allLogs.includes("Current top level object is not a 3D object")) {
+    let csgText2D = "";
+    try {
+      const csg2DInst = await initWasm({
+        ...options,
+        print: () => {},
+        printErr: () => {}
+      });
+      setupInstanceFilesystem(csg2DInst, rawProjectCode || scadCode);
+      csg2DInst.FS.writeFile("/input.scad", scadCode);
+      csg2DInst.callMain([...ENGINE_ENABLE_FLAGS, "/input.scad", "-o", "/output.csg"]);
+      csgText2D = csg2DInst.FS.readFile("/output.csg", { encoding: "utf8" });
+    } catch (_) {}
+    const code2D = (csgText2D && csgText2D.trim().length > 0)
+      ? prepareScadForManifold(wrap2DCsgWithExtrude(csgText2D))
+      : ("linear_extrude(height = 1, center = true) {\n" + scadCode + "\n}");
+
     const instance2D = await initWasm({
       ...options,
       print: text => logs.push(text),
-      printErr: text => logs.push(text)
+      printErr: text => {
+        logs.push(text);
+        if (text.includes("ERROR:") || text.includes("Can't parse file")) {
+          errors.push(text);
+        }
+      }
     });
     setupInstanceFilesystem(instance2D, rawProjectCode || scadCode);
-    instance2D.FS.writeFile("/input.scad", "linear_extrude(height = 1, center = true) {\n" + scadCode + "\n}");
-    exitCode = instance2D.callMain(["--backend=Manifold", "--export-format=binstl", "/input.scad", "-o", "/output.stl"]);
+    instance2D.FS.writeFile("/input.scad", code2D);
+    try {
+      exitCode = instance2D.callMain([...ENGINE_ENABLE_FLAGS, "/input.scad", "-o", "/output.off"]);
+    } catch (callErr2D) {
+      const errMsg2D = (callErr2D && callErr2D.message) ? callErr2D.message : String(callErr2D);
+      errors.push(errMsg2D);
+      logs.push("ERROR: " + errMsg2D);
+    }
     allLogs = logs.join("\n");
     try {
-      const bytes2D = instance2D.FS.readFile("/output.stl");
-      return { outBytes: bytes2D, logs, errors, exitCode, allLogs, instance: instance2D };
+      const off2D = instance2D.FS.readFile("/output.off", { encoding: "utf8" });
+      const tris2D = parseOffToTriangles(off2D, modifierAttr || 0);
+      return { tris: tris2D, logs, errors, exitCode, allLogs, instance: instance2D };
     } catch (_) {}
   }
-  let outBytes = null;
+  let tris = [];
   try {
-    outBytes = instance.FS.readFile("/output.stl");
+    const offText = instance.FS.readFile("/output.off", { encoding: "utf8" });
+    tris = parseOffToTriangles(offText, modifierAttr || 0);
   } catch (_) {}
-  return { outBytes, logs, errors, exitCode, allLogs, instance };
+  return { tris, logs, errors, exitCode, allLogs, instance };
 }
 
 async function createOpenSCAD(options = {}) {
@@ -5666,8 +5967,8 @@ async function createOpenSCAD(options = {}) {
       const hasBang = hasScadModifier(code, '!');
 
       let mainRes = null;
-      let highlightBytes = null;
-      let backgroundBytes = null;
+      let highlightTris = [];
+      let backgroundTris = [];
 
       if ((hasHash || hasPct) && !hasBang) {
         try {
@@ -5678,31 +5979,31 @@ async function createOpenSCAD(options = {}) {
           });
           setupInstanceFilesystem(csgInst, code);
           csgInst.FS.writeFile("/raw.scad", code);
-          csgInst.callMain(["--backend=Manifold", "/raw.scad", "-o", "/output.csg"]);
+          csgInst.callMain([...ENGINE_ENABLE_FLAGS, "/raw.scad", "-o", "/output.csg"]);
           const csgText = csgInst.FS.readFile("/output.csg", { encoding: "utf8" });
           if (hasHash) {
             const hashCsg = extractModifiedCsg(csgText, '#');
             if (hashCsg && hashCsg.trim().length > 0) {
               const hashPrepared = prepareScadForManifold(hashCsg);
-              const hRes = await runSingleBinstlRender(hashPrepared, code, options, false);
-              highlightBytes = hRes.outBytes;
+              const hRes = await runSingleBinstlRender(hashPrepared, code, options, false, 1);
+              highlightTris = hRes.tris || [];
             }
           }
           if (hasPct) {
             const pctCsg = extractModifiedCsg(csgText, '%');
             if (pctCsg && pctCsg.trim().length > 0) {
               const pctPrepared = prepareScadForManifold(pctCsg);
-              const pRes = await runSingleBinstlRender(pctPrepared, code, options, false);
-              backgroundBytes = pRes.outBytes;
+              const pRes = await runSingleBinstlRender(pctPrepared, code, options, false, 2);
+              backgroundTris = pRes.tris || [];
             }
           }
-          // Extract opaque CSG tree, excluding positive objects that are highlighted (#)
+          // Extract opaque CSG tree, excluding positive objects that are highlighted (#) or background (%)
           const opaqueCsg = extractOpaqueCsg(csgText);
           if (opaqueCsg && opaqueCsg.trim().length > 0) {
             const opaquePrepared = prepareScadForManifold(opaqueCsg);
-            mainRes = await runSingleBinstlRender(opaquePrepared, code, options, true);
+            mainRes = await runSingleBinstlRender(opaquePrepared, code, options, true, 0);
           } else {
-            mainRes = { outBytes: null, logs: [], errors: [], exitCode: 0, allLogs: "" };
+            mainRes = { tris: [], logs: [], errors: [], exitCode: 0, allLogs: "" };
           }
           lastInstance = mainRes.instance || csgInst;
         } catch (modErr) {
@@ -5712,11 +6013,11 @@ async function createOpenSCAD(options = {}) {
 
       if (!mainRes) {
         const preparedCode = prepareScadForManifold(code);
-        mainRes = await runSingleBinstlRender(preparedCode, code, options, true);
+        mainRes = await runSingleBinstlRender(preparedCode, code, options, true, 0);
         lastInstance = mainRes.instance;
       }
 
-      const combined = combineStlBuffers(mainRes.outBytes, highlightBytes, backgroundBytes);
+      const combined = combineTriangleListsToBuffer(mainRes.tris, highlightTris, backgroundTris);
       if (!combined) {
         if (mainRes.allLogs.includes("Current top level object is empty")) {
           return "";
@@ -5724,7 +6025,7 @@ async function createOpenSCAD(options = {}) {
         if (mainRes.errors.length > 0) {
           throw new Error(mainRes.errors.join("\n"));
         }
-        if (!mainRes.outBytes) {
+        if (!mainRes.tris || mainRes.tris.length === 0) {
           throw new Error("OpenSCAD erzeugte keine Ausgabedatei (Exit-Code " + mainRes.exitCode + "). Log: " + mainRes.allLogs);
         }
         return "";
@@ -5737,7 +6038,7 @@ async function createOpenSCAD(options = {}) {
       setupInstanceFilesystem(instance, code);
       const preparedCode = prepareScadForManifold(code);
       instance.FS.writeFile("/input.scad", preparedCode);
-      instance.callMain(["--backend=Manifold", "/input.scad", "-o", "/output.stl"]);
+      instance.callMain([...ENGINE_ENABLE_FLAGS, "/input.scad", "-o", "/output.stl"]);
       const allCheck = instance.FS.analyzePath("/output.stl");
       if (!allCheck.exists) return "";
       const result = instance.FS.readFile("/output.stl", {
