@@ -13,8 +13,8 @@ android {
         applicationId = "de.fisch981.scadroid"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "0.1.30"
+        versionCode = 32
+        versionName = "0.1.31"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -73,6 +73,15 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    applicationVariants.all {
+        if (buildType.name == "release") {
+            outputs.all {
+                val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
+                output?.outputFileName = "SCADroid-release.apk"
+            }
+        }
+    }
 }
 
 dependencies {
@@ -104,20 +113,4 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation("androidx.compose.ui:ui-test-manifest")
-}
-
-tasks.register("copyReleaseApkToRoot") {
-    dependsOn("assembleRelease")
-    doLast {
-        val apkFile = layout.buildDirectory.file("outputs/apk/release/app-release.apk").get().asFile
-        if (apkFile.exists()) {
-            val destFile = File(rootDir, "SCADroid-release.apk")
-            apkFile.copyTo(destFile, overwrite = true)
-            
-            
-            println("Release APK kopiert nach: ${destFile.absolutePath}")
-        } else {
-            throw GradleException("Release APK nicht gefunden unter: ${apkFile.absolutePath}")
-        }
-    }
 }

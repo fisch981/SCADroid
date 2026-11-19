@@ -1,4 +1,4 @@
-param (
+﻿param (
     [Alias("Message")]
     [string]$ChangeSummary = "",
 
@@ -132,13 +132,19 @@ if (-not $env:JAVA_HOME -or -not (Test-Path $env:JAVA_HOME)) {
 Remove-Item "SCADroid-release.apk" -ErrorAction SilentlyContinue
 Remove-Item "SCADroid-v*.apk" -ErrorAction SilentlyContinue
 
-& ".\gradlew.bat" clean testDebugUnitTest copyReleaseApkToRoot
+& ".\gradlew.bat" clean testDebugUnitTest assembleRelease
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Gradle Build oder Unit-Tests (inkl. ChangelogTest) sind fehlgeschlagen (Exit Code $LASTEXITCODE)!"
 }
 
-if (-not (Test-Path "SCADroid-release.apk")) {
-    Write-Error "Release APK konnte nicht im Root-Verzeichnis erstellt werden!"
+$apkFile = Join-Path $PSScriptRoot "app\build\outputs\apk\release\SCADroid-release.apk"
+if (-not (Test-Path $apkFile)) {
+    $fallbackApk = Join-Path $PSScriptRoot "app\build\outputs\apk\release\app-release.apk"
+    if (Test-Path $fallbackApk) {
+        $apkFile = $fallbackApk
+    } else {
+        Write-Error "Release APK konnte nicht unter $apkFile erstellt werden!"
+    }
 }
 
 # 5. Git Stage, Commit & Push
@@ -152,11 +158,18 @@ git push origin main
 # 6. GitHub Release erstellen / aktualisieren
 Write-Host "==> Erstelle GitHub Release v$newName..." -ForegroundColor Cyan
 $releaseNotes = "$summaryDe`n`n$summaryEn"
-try {
-    gh release create "v$newName" "SCADroid-release.apk" --title "SCADroid v$newName" --notes "$releaseNotes"
-} catch {
-    Write-Host "Hinweis: GitHub Release existiert bereits oder gh fehlerhaft, versuche Upload..." -ForegroundColor Yellow
-    gh release upload "v$newName" "SCADroid-release.apk" --clobber
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+gh release view "v$newName" 2>$null | Out-Null
+$releaseExists = ($LASTEXITCODE -eq 0)
+$ErrorActionPreference = $prevEap
+if ($releaseExists) {
+    gh release upload "v$newName" "$apkFile#SCADroid-release.apk" --clobber
+} else {
+    gh release create "v$newName" "$apkFile#SCADroid-release.apk" --title "SCADroid v$newName" --notes "$releaseNotes"
+}
+if ($LASTEXITCODE -ne 0) {
+    throw "GitHub Release Upload für v$newName fehlgeschlagen!"
 }
 
 Write-Host "==> Erfolgreich veroeffentlicht & gepusht: v$newName (Code $newCode)" -ForegroundColor Green

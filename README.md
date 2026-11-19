@@ -37,10 +37,10 @@ Ensure you have the Android SDK (API 35) and JDK 17 installed.
 git clone https://github.com/fisch981/SCADroid.git
 cd SCADroid
 
-# Build debug or release APK
-./gradlew assembleDebug
-# or
-./gradlew copyReleaseApkToRoot
+# Build release APK (outputs to app/build/outputs/apk/release/SCADroid-release.apk)
+./gradlew assembleRelease
+# The official release APK is distributed exclusively via GitHub Releases:
+# https://github.com/fisch981/SCADroid/releases/latest
 ```
 
 ### License & Legal Information

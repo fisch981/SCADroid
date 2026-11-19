@@ -8,6 +8,12 @@ Dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/) und dem 
 
 ---
 
+## [0.1.31] - 2026-11-19
+
+### Geändert & Hinzugefügt / Changed & Added
+- **DE:** build: Release-APK ausschliesslich im Build-Verzeichnis erzeugen und per GitHub Releases ausliefern (Root-Kopie entfernt)
+- **EN:** build: generate release APK solely in build directory and distribute via GitHub Releases (removed root copy)
+
 ## [0.1.30] - 2026-11-17
 
 ### Geändert & Hinzugefügt / Changed & Added
