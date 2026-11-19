@@ -9,3 +9,4 @@ captures/
 .externalNativeBuild/
 .cxx/
 vcpkg_installed/
+*.apk
